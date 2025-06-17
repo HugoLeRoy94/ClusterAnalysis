@@ -1,5 +1,6 @@
 # structure of the project
 
+<pre> ```
 cluster-analysis/               ← project root (git repo)
 ├─ README.md                      ← project overview & quick-start
 │
@@ -50,7 +51,6 @@ cluster-analysis/               ← project root (git repo)
       │  ├─ entropy_scan.csv      
       │  ├─ longest_trajectory.csv
       │  ├─ phases.parquet
-
       │
       └─ processed/
          ├─ embedding.pkl
@@ -58,6 +58,7 @@ cluster-analysis/               ← project root (git repo)
          ├─ umap_....npy
 
       └─ processed/                ← embeddings.pkl
+``` </pre>
 
 # How it works
 
