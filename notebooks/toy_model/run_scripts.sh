@@ -11,9 +11,8 @@
         --input ../../data/toy_model/interim/phases.parquet \
         --output-file ../../data/toy_model/interim/entropy_scan.csv \
         --columns speed,curvature_angle,torsion_angle \
-        --columns-trans x,y,z \
         --K-values 1,3,5,10,20,30,40,50 \
-        --n-clusters-values 2,3,4,5,10,15,20,30,40,50 \
+        --n-clusters-values 2,3,4,5,10,15,20,30,40,50,100,150,200 \
         --tau 1
 
 ./../../scripts/03_embed_and_cluster.py \
