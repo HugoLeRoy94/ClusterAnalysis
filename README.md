@@ -1,6 +1,6 @@
 # structure of the project
 
-<pre> ```
+<pre>
 cluster-analysis/               ← project root (git repo)
 ├─ README.md                      ← project overview & quick-start
 │
@@ -58,7 +58,7 @@ cluster-analysis/               ← project root (git repo)
          ├─ umap_....npy
 
       └─ processed/                ← embeddings.pkl
-``` </pre>
+</pre>
 
 # How it works
 
