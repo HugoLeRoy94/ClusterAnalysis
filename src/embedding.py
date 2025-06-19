@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import ArrayLike
 from sklearn.cluster import KMeans
+from sklearn.cluster import SpectralClustering
 
 import umap
 
@@ -113,7 +114,7 @@ class Embedding:
     # ------------------------------------------------------------------
     # Clustering
     # ------------------------------------------------------------------
-    def make_cluster(self, n_clusters: int, random_state: int = 0) -> np.ndarray:
+    def make_cluster(self, n_clusters: int, random_state: int = 0,nsub_sample: int =-1,clustering_method: str ='kmeans') -> np.ndarray:
         """Run k‑means on the embedding matrix and store the labels.
         Returns the 1‑D label array of length *self.embedding_matrix.shape[0]*.
         """
@@ -122,9 +123,15 @@ class Embedding:
         if n_clusters>self.embedding_matrix.shape[0]:
             raise ValueError("n_clusters must be lower than the number of samples")
         self.n_clusters = n_clusters
-        km = KMeans(n_clusters=n_clusters, n_init="auto", random_state=random_state)
-        self.labels = km.fit_predict(self.flatten_embedding_matrix)
-        self.cluster_centers_ = km.cluster_centers_
+
+        if clustering_method == 'kmeans':
+            km = KMeans(n_clusters=n_clusters, n_init="auto", random_state=random_state)
+            self.labels = km.fit_predict(self.flatten_embedding_matrix[:nsubsample])
+            self.cluster_centers_ = km.cluster_centers_
+        elif clustering_method=='spectral':
+            km = SpectralClustering(n_clusters=n_clusters,affinity='nearest_neighbors', assign_labels='kmeans',random_state=0)
+            self.labels = km.fit_predict(self.flatten_embedding_matrix[:nsub_sample])
+            self.cluster_centers_ = np.array([self.flatten_embedding_matrix[:nsub_sample][self.labels == i].mean(axis=0) for i in range(np.max(self.labels) + 1)])
         return self.labels
     def make_transition_matrix(
         self,
@@ -184,8 +191,10 @@ class Embedding:
         return self.flatten_embedding_matrix[words[index]]
     def make_transition(self)-> int:
         """ given a current state : a cluster id, returns the id of the next cluster, selected according to the transition matrix."""
-        if self.state==None:
+        if self.state is None:
             raise RuntimeError("Need to initialize the state first.")
+        if self.P is None:
+            raise RuntimeError("Need to make the transition matrix first.")
         cum_prob_array = np.cumsum(self.P[self.state])
         rd = np.random.randint(0,1000)/1000.
         self.state= np.searchsorted(cum_prob_array,rd , side='right')
