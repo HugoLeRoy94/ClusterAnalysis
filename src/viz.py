@@ -237,3 +237,96 @@ def plot_colored_trajectory(
         plt.colorbar(lc, ax=ax, label=color_col)
 
     return lc
+
+import numpy as np
+from matplotlib.collections import LineCollection
+from matplotlib import cm  # For colormaps
+import matplotlib.pyplot as plt
+
+def plot_colored_trajectory(
+    ax, 
+    track, 
+    x_col="POSITION_X", 
+    y_col="POSITION_Y", 
+    color_col="angular_speed", 
+    cmap='viridis', 
+    vmin=None, 
+    vmax=None, 
+    add_colorbar=False
+):
+    # Sort track by frame
+    track = track.sort_values("FRAME")
+    
+    # Get values
+    x = track[x_col].values
+    y = track[y_col].values
+    c = track[color_col].values
+
+    # Create segments for LineCollection
+    points = np.array([x, y]).T.reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+    # Create LineCollection with fixed or auto color limits
+    norm = plt.Normalize(vmin if vmin is not None else np.min(c), 
+                         vmax if vmax is not None else np.max(c))
+    lc = LineCollection(segments, cmap=cmap, norm=norm)
+    lc.set_array(c[:-1])
+    lc.set_linewidth(1)
+    ax.add_collection(lc)
+
+    # Optionally add colorbar
+    if add_colorbar:
+        plt.colorbar(lc, ax=ax)
+    # Adjust axis limits
+    ax.set_xlim(np.min(x), np.max(x))
+    ax.set_ylim(np.min(y), np.max(y))
+    return lc  # return LineCollection in case you want to collect it externally
+
+import mpl_scatter_density # adds projection='scatter_density'
+from matplotlib.colors import LinearSegmentedColormap
+
+# "Viridis-like" colormap with white background
+cmap = LinearSegmentedColormap.from_list('white_viridis', [
+    (0, '#ffffff'),
+    (1e-20, '#440053'),
+    (0.2, '#404388'),
+    (0.4, '#2a788e'),
+    (0.6, '#21a784'),
+    (0.8, '#78d151'),
+    (1, '#fde624'),
+], N=256)
+
+def use_mpl_scatter_density(
+    fig, x, y,
+    nrows=1, ncols=1, pos=1, dpi=75,
+    norm=None, colorbar=True,
+    ax=None,
+    xscale='linear',
+    yscale='linear'
+):
+    # Convert to numpy arrays (in case input is list-like)
+    x = np.asarray(x)
+    y = np.asarray(y)
+
+    # Filter for valid log-scale values
+    valid = np.ones_like(x, dtype=bool)
+    if xscale == 'log':
+        valid &= x > 0
+    if yscale == 'log':
+        valid &= y > 0
+    x = x[valid]
+    y = y[valid]
+
+    if ax is None:
+        ax = fig.add_subplot(nrows, ncols, pos, projection='scatter_density')
+    if norm is None:
+        density = ax.scatter_density(x, y, cmap=cmap, dpi=dpi)
+    else:
+        density = ax.scatter_density(x, y, cmap=cmap, dpi=dpi, norm=norm)
+    if colorbar:
+        fig.colorbar(density, label='Number of points per pixel')
+
+    ax.set_xscale(xscale)
+    ax.set_yscale(yscale)
+
+    return ax
