@@ -64,7 +64,7 @@ def plot_transition_matrix(P: np.ndarray, title: str = "Transition matrix", ax=N
     """
     if ax is None:
         fig, ax = plt.subplots()
-    sns.heatmap(P, ax=ax, cmap="viridis", square=True, cbar=True)
+    sns.heatmap(P, ax=ax, cmap="viridis", square=True, cbar=True,rasterized=True)
     ax.set_title(title)
     ax.set_xlabel("To")
     ax.set_ylabel("From")
