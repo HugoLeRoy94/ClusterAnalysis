@@ -64,8 +64,10 @@ class EmbeddingPosition(Embedding):
                 win_abs = self.Y[n, t:t + K].reshape(-1)
 
                 # Translated window (relative shift)
-                win_rel = self.Y_translated[n, t:t + K] - self.Y_translated[n, t]
-                win_rel = win_rel.reshape(-1)
+                #win_rel = self.Y_translated[n, t:t + K] - self.Y_translated[n, t]
+                #win_rel = win_rel.reshape(-1)
+                win_rel = self.canonicalize_trajectory(self.Y_translated[n, t:t + K] ) # shape : (K,d)
+                win_rel = win_rel.reshape(-1) # shape K*d
 
                 full_window = np.concatenate([win_abs, win_rel])
 
@@ -76,3 +78,48 @@ class EmbeddingPosition(Embedding):
                 flatten_out_row += 1
 
         return self.embedding_matrix, self.flatten_embedding_matrix
+
+    @staticmethod
+    def canonicalize_trajectory(coords, *, return_rotation=False, tol=1e-12):
+        """
+        Rotate `coords` (K×3) into a unique canonical frame.
+        Any rigid-body rotation + translation of the same trajectory
+        maps to the *identical* output.
+
+        Algorithm
+        ---------
+        1.  centre at the centroid
+        2.  PCA → eigenvectors V (columns)
+        3.  for each axis j:                       # sign disambiguation
+            m3 = Σ (x_j')³   (third central moment)
+            if |m3| < tol use   Σ x_j'² x_{j+1}'
+            flip V[:,j] if m3 < 0
+        4.  make the basis right-handed (det = +1)
+        5.  rotated = centred @ V
+
+        Returns
+        -------
+        canon : (K,3)  canonical coordinates (centroid at the origin)
+        R      : (3,3) rotation matrix  (only if `return_rotation=True`)
+        """
+        X   = np.asarray(coords, dtype=float)
+        C   = X - X.mean(axis=0)               # 1
+        _,  _, Vt = np.linalg.svd(C, full_matrices=False)
+        V   = Vt.T                             # 2
+
+        Y   = C @ V                            # projections for moments
+        for j in range(3):                     # 3
+            m3 = (Y[:, j] ** 3).sum()
+            if abs(m3) < tol:                  # nearly symmetric
+                k = (j + 1) % 3
+                m3 = (Y[:, j]**2 * Y[:, k]).sum()
+            if m3 < 0:
+                V[:, j] *= -1
+                Y[:, j] *= -1
+
+        if np.linalg.det(V) < 0:               # 4
+            V[:, 2] *= -1
+            Y[:, 2] *= -1
+
+        canon = Y                               # 5
+        return (canon, V) if return_rotation else canon
