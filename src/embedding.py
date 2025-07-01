@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 from sklearn.cluster import KMeans
 from sklearn.cluster import SpectralClustering
 
@@ -114,24 +114,27 @@ class Embedding:
     # ------------------------------------------------------------------
     # Clustering
     # ------------------------------------------------------------------
-    def make_cluster(self, n_clusters: int, random_state: int = 0,n_subsample: int =-1,clustering_method: str ='kmeans') -> np.ndarray:
+    def make_cluster(self, n_clusters: int, random_state: int = 0,n_subsample: Optional[int] =None,clustering_method: str ='kmeans') -> np.ndarray:
         """Run k‑means on the embedding matrix and store the labels.
         Returns the 1‑D label array of length *self.embedding_matrix.shape[0]*.
         """
         if self.embedding_matrix is None:
             raise RuntimeError("Call make_embedding() first.")
-        if n_clusters>self.embedding_matrix.shape[0]:
+        if n_clusters>self.flatten_embedding_matrix.shape[0]:
             raise ValueError("n_clusters must be lower than the number of samples")
         self.n_clusters = n_clusters
 
+        X = self.flatten_embedding_matrix
+        subset = X if n_subsample is None else X[:n_subsample]
+
         if clustering_method == 'kmeans':
             km = KMeans(n_clusters=n_clusters, n_init="auto", random_state=random_state)
-            self.labels = km.fit_predict(self.flatten_embedding_matrix[:n_subsample])
+            self.labels = km.fit_predict(subset)
             self.cluster_centers_ = km.cluster_centers_
         elif clustering_method=='spectral':
             km = SpectralClustering(n_clusters=n_clusters,affinity='nearest_neighbors', assign_labels='kmeans',random_state=0)
-            self.labels = km.fit_predict(self.flatten_embedding_matrix[:n_subsample])
-            self.cluster_centers_ = np.array([self.flatten_embedding_matrix[:n_subsample][self.labels == i].mean(axis=0) for i in range(np.max(self.labels) + 1)])
+            self.labels = km.fit_predict(subset)
+            self.cluster_centers_ = np.array([subset[self.labels == i].mean(axis=0) for i in range(np.max(self.labels) + 1)])
         return self.labels
     def make_transition_matrix(
         self,
@@ -241,14 +244,20 @@ class Embedding:
         """
         n = P.shape[0]
         pi = np.ones(n) / n
-        for _ in range(maxiter):
+        i = 0
+        while True:
             pi_new = pi @ P
             if np.linalg.norm(pi_new - pi, 1) < tol:
                 break
             pi = pi_new
+            i+=1
+            if i >= maxiter:
+                val,vec = np.linalg.eig(P.T)
+                return vec[:,0]/np.sum(vec[:,0])
+
         return pi
     @staticmethod
-    def entropy_rate(P: np.ndarray, pi: Optional[np.ndarray] = None, base: float = 2.0) -> float:
+    def entropy_rate(P: np.ndarray, pi: Optional[np.ndarray] = None) -> float:
         """Shannon entropy rate *h = -∑_i π_i ∑_j P_ij log P_ij* in *bits* per step.
 
         Parameters
@@ -263,8 +272,9 @@ class Embedding:
         if pi is None:
             pi = Embedding.stationary_distribution(P)
         with np.errstate(divide="ignore", invalid="ignore"):
-            logP = np.log(P) / np.log(base)
+            logP = np.log(P) #/ np.log(base)
             logP[np.isneginf(logP)] = 0.0  # define 0·log0 = 0
+            #h= -np.sum(np.sum(P * logP,axis=1)*pi)
             h = -(pi[:, None] * P * logP).sum()
         return float(h)
     @staticmethod

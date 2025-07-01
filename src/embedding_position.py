@@ -45,8 +45,10 @@ class EmbeddingPosition(Embedding):
 
 
     def make_embedding(self, K: int) -> (np.ndarray, np.ndarray):
-        if K < 1 or K > self.T:
-            raise ValueError("K must be in the range [1, T]")
+        if K < 3 or K > self.T:
+            # minimum value of K for the SVD in canonicalize trajectory, where V the rotation matrix
+            # will have the dimension min(K,d). 
+            raise ValueError("K must be in the range [3, T]")
 
         self.K = K
         self.N = self.Y.shape[0]
@@ -102,6 +104,7 @@ class EmbeddingPosition(Embedding):
         canon : (K,3)  canonical coordinates (centroid at the origin)
         R      : (3,3) rotation matrix  (only if `return_rotation=True`)
         """
+
         X   = np.asarray(coords, dtype=float)
         C   = X - X.mean(axis=0)               # 1
         _,  _, Vt = np.linalg.svd(C, full_matrices=False)

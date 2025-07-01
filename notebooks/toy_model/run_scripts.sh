@@ -9,9 +9,10 @@
 
 ./../../scripts/02_compute_entropy_production.py \
         --input ../../data/toy_model/interim/phases.parquet \
-        --output-file ../../data/toy_model/interim/entropy_scan.csv \
+        --output-file ../../data/toy_model/interim/entropy_scan_2.csv \
         --columns speed,curvature_angle,torsion_angle \
-        --K-values 1,3,5,10,20,30,40,50 \
+        #--columns-trans x,y,z \
+        --K-values 3,5,10,20,30,40,50 \
         --n-clusters-values 2,3,4,5,10,15,20,30,40,50,100,150,200 \
         --tau 1
 
@@ -32,3 +33,12 @@
         --cluster-centers True \
         --n-neighbors 100 \
         --min-dist 0.1
+
+
+./../../scripts/02_compute_entropy_production.py \
+        --input ../../data/toy_model/interim/phases.parquet \
+        --output-file ../../data/toy_model/interim/entropy.csv \
+        --columns speed,curvature_angle,abs_torsion_angle \
+        --K-values 3,5,10,20,30,40,50,100,200 \
+        --n-clusters-values 2,3,4,5,10,15,20,30,40,50,100,150,200,500,1000,2000 \
+        --tau 1        
