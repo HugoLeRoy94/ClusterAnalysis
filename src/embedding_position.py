@@ -63,15 +63,21 @@ class EmbeddingPosition(Embedding):
             out_row = 0
             for t in range(self.L):
                 # Absolute window (no shift)
-                win_abs = self.Y[n, t:t + K].reshape(-1)
-
+                #win_abs = self.Y[n, t:t + K].reshape(-1)
                 # Translated window (relative shift)
-                #win_rel = self.Y_translated[n, t:t + K] - self.Y_translated[n, t]
-                #win_rel = win_rel.reshape(-1)
-                win_rel = self.canonicalize_trajectory(self.Y_translated[n, t:t + K] ) # shape : (K,d)
-                win_rel = win_rel.reshape(-1) # shape K*d
+                #win_rel = self.canonicalize_trajectory(self.Y_translated[n, t:t + K] ) # shape : (K,d)
+                #win_rel = win_rel.reshape(-1) # shape K*d
+                #full_window = np.concatenate([win_abs, win_rel])
 
-                full_window = np.concatenate([win_abs, win_rel])
+                # win_abs: (K, d_abs), win_rel: (K, d_rel)
+                win_abs = self.Y[n, t:t + K]                     # shape (K, d_abs)
+                win_rel = self.canonicalize_trajectory(self.Y_translated[n, t:t + K])  # shape (K, d_rel)
+
+                # Concatenate per-time-step: result is (K, d_abs + d_rel)
+                combined = np.concatenate([win_abs, win_rel], axis=1)
+
+                # Flatten to shape (K*(d_abs + d_rel),)
+                full_window = combined.reshape(-1)
 
                 self.embedding_matrix[n, out_row] = full_window
                 self.flatten_embedding_matrix[flatten_out_row] = full_window

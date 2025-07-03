@@ -5,8 +5,10 @@ from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from numpy.typing import ArrayLike, NDArray
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, MiniBatchKMeans
 from sklearn.cluster import SpectralClustering
+from pyclustering.cluster.kmedoids import kmedoids
+from pyclustering.utils.metric import distance_metric, type_metric
 
 import umap
 
@@ -114,13 +116,13 @@ class Embedding:
     # ------------------------------------------------------------------
     # Clustering
     # ------------------------------------------------------------------
-    def make_cluster(self, n_clusters: int, random_state: int = 0,n_subsample: Optional[int] =None,clustering_method: str ='kmeans') -> np.ndarray:
-        """Run k‑means on the embedding matrix and store the labels.
+    def make_cluster(self, n_clusters: int, random_state: int = 0, n_subsample: Optional[int] = None, clustering_method: str = 'kmeans', batchsize: Optional[int] = None, tol: float = 0.001) -> np.ndarray:
+        """Run clustering on the embedding matrix and store the labels.
         Returns the 1‑D label array of length *self.embedding_matrix.shape[0]*.
         """
         if self.embedding_matrix is None:
             raise RuntimeError("Call make_embedding() first.")
-        if n_clusters>self.flatten_embedding_matrix.shape[0]:
+        if n_clusters > self.flatten_embedding_matrix.shape[0]:
             raise ValueError("n_clusters must be lower than the number of samples")
         self.n_clusters = n_clusters
 
@@ -131,10 +133,30 @@ class Embedding:
             km = KMeans(n_clusters=n_clusters, n_init="auto", random_state=random_state)
             self.labels = km.fit_predict(subset)
             self.cluster_centers_ = km.cluster_centers_
-        elif clustering_method=='spectral':
-            km = SpectralClustering(n_clusters=n_clusters,affinity='nearest_neighbors', assign_labels='kmeans',random_state=0)
-            self.labels = km.fit_predict(subset)
+        elif clustering_method == 'spectral':
+            sc = SpectralClustering(n_clusters=n_clusters, affinity='nearest_neighbors', assign_labels='kmeans', random_state=random_state)
+            self.labels = sc.fit_predict(subset)
             self.cluster_centers_ = np.array([subset[self.labels == i].mean(axis=0) for i in range(np.max(self.labels) + 1)])
+        elif clustering_method == 'minibatch_kmeans':
+            if batchsize is None:
+                batchsize = n_clusters * 5
+            mbk = MiniBatchKMeans(batch_size=batchsize, n_clusters=n_clusters, random_state=random_state)
+            self.labels = mbk.fit_predict(subset)
+            self.cluster_centers_ = mbk.cluster_centers_
+        elif clustering_method == 'kmedoids':
+            metric = distance_metric(type_metric.CHEBYSHEV)
+            initial_medoid_indices = np.random.choice(np.arange(len(subset)), n_clusters, replace=False)
+            kmedoids_instance = kmedoids(subset, initial_medoid_indices, metric=metric, tolerance=tol)
+            kmedoids_instance.process()
+            clusters = kmedoids_instance.get_clusters()
+            medoids = kmedoids_instance.get_medoids()
+            
+            labels = np.arange(len(subset))
+            for kc, cluster in enumerate(clusters):
+                labels[cluster] = kc
+            self.labels = labels
+            self.cluster_centers_ = np.array(medoids)
+
         return self.labels
     def make_transition_matrix(
         self,
