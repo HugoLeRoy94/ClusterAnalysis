@@ -275,7 +275,8 @@ class Embedding:
             i+=1
             if i >= maxiter:
                 val,vec = np.linalg.eig(P.T)
-                return vec[:,0]/np.sum(vec[:,0])
+                vec = vec[:,np.argsort(val)]            
+                return np.real(vec[:,-1]/np.sum(vec[:,-1]))
 
         return pi
     @staticmethod
