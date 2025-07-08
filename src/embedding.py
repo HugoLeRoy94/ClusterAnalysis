@@ -192,15 +192,16 @@ class Embedding:
             out.append("stationary π  : available")
         return "\n".join(out)
 
-    def implied_timescales(self) -> np.ndarray:
+    def implied_timescales(self,tau: float) -> np.ndarray:
         """Return relaxation times τᵢ = −lag / ln λᵢ for eigenvalues λᵢ < 1."""
         if self.P is None:
             raise RuntimeError("Need the transition matrix first.")
-        lag = 1  # because transition_matrix() uses this default; could store the lag
+        #lag = 1  # because transition_matrix() uses this default; could store the lag
         evals = np.linalg.eigvals(self.P)
         evals = np.real(evals)
         evals = evals[np.argsort(-evals)]  # descending order; λ₀ = 1 comes first
-        return -lag / np.log(np.clip(evals[1:], 1e-15, 1 - 1e-15))
+        #return -lag / np.log(np.clip(evals[1:], 1e-15, 1 - 1e-15))
+        return tau/(1-evals[1:])
     # ------------------------------------------------------------------
     # Simulate trajectories
     # ------------------------------------------------------------------        
@@ -227,8 +228,8 @@ class Embedding:
     # ------------------------------------------------------------------
     # ------------------------------------------------------------------
     """
-      ▄▄▄  ■  ▗▞▀▜▌   ■  ▄ ▗▞▀▘    ▗▞▀▀▘█  ▐▌▄▄▄▄  ▗▞▀▘   ■  ▄  ▄▄▄  ▄▄▄▄   ▄▄▄ 
-     ▀▄▄▗▄▟▙▄▖▝▚▄▟▌▗▄▟▙▄▖▄ ▝▚▄▖    ▐▌   ▀▄▄▞▘█   █ ▝▚▄▖▗▄▟▙▄▖▄ █   █ █   █ ▀▄▄  
+       ▄▄▄  ■  ▗▞▀▜▌   ■  ▄ ▗▞▀▘    ▗▞▀▀▘█  ▐▌▄▄▄▄  ▗▞▀▘   ■  ▄  ▄▄▄  ▄▄▄▄   ▄▄▄ 
+    ▀▄ ▗▄▟▙▄▖▝▚▄▟▌▗▄▟▙▄▖▄ ▝▚▄▖    ▐▌   ▀▄▄▞▘█   █ ▝▚▄▖▗▄▟▙▄▖▄ █   █ █   █ ▀▄▄  
      ▄▄▄▀ ▐▌         ▐▌  █         ▐▛▀▘      █   █       ▐▌  █ ▀▄▄▄▀ █   █ ▄▄▄▀ 
           ▐▌         ▐▌  █         ▐▌                    ▐▌  █                  
           ▐▌         ▐▌                                  ▐▌                     
@@ -275,7 +276,7 @@ class Embedding:
             i+=1
             if i >= maxiter:
                 val,vec = np.linalg.eig(P.T)
-                vec = vec[:,np.argsort(val)]            
+                vec = vec[:,np.argsort(np.real(val))]            
                 return np.real(vec[:,-1]/np.sum(vec[:,-1]))
 
         return pi
@@ -379,15 +380,3 @@ class Embedding:
         counts[counts == 0] = 1  # avoid divide-by-zero
         Y /= counts
         return Y
-    @staticmethod
-    def implied_timescales(P: NDArray[np.float_], lag: float = 1.0) -> NDArray[np.float_]:
-        """
-        Relaxation timescales τ_i = −lag / ln(λ_i), for λ_i < 1
-
-        Assumes P is diagonalizable.
-        """
-        eigvals = np.linalg.eigvals(P)
-        eigvals = np.real(eigvals)
-        eigvals = np.sort(eigvals)[::-1]  # descending
-        eigvals = np.clip(eigvals[1:], 1e-15, 1 - 1e-15)
-        return -lag / np.log(eigvals)    
