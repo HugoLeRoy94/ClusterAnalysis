@@ -1,5 +1,5 @@
 ./../../scripts/01_make_phases.py \
-        --input ../../data/toy_model/raw/helix_and_straight_lines.parquet \
+        --input ../../data/toy_model/raw/cast_and_surge_and_straight.parquet \
         --output ../../data/toy_model/interim/ \
         --smooth True \
         --window 5 \
