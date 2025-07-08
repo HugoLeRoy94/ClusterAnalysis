@@ -86,7 +86,7 @@ def plot_distribution(pi: np.ndarray, title: str = "distribution", ax=None):
     ax.set_ylabel("Probability")
 
 
-def plot_implied_timescales(tscales: np.ndarray, title: str = "Implied timescales", ax=None):
+def plot_implied_timescales(tscales: np.ndarray, title: str = "Implied timescales", ax=None,label= None):
     """
     Plot implied timescales (in log scale if needed).
 
@@ -97,7 +97,7 @@ def plot_implied_timescales(tscales: np.ndarray, title: str = "Implied timescale
     """
     if ax is None:
         fig, ax = plt.subplots()
-    ax.plot(np.arange(1, len(tscales) + 1), tscales, marker="o")
+    ax.plot(np.arange(1, len(tscales) + 1), tscales, marker="o",label=label)
     ax.set_title(title)
     ax.set_xlabel("Index")
     ax.set_ylabel("τ")
