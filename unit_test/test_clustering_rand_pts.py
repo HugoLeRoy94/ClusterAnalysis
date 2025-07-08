@@ -9,32 +9,49 @@ from sklearn.cluster import KMeans
 sys.path.append('../')
 
 
-def count_transitions(labels: np.ndarray, n_clusters: int, tau: int,nsample: int, TmKp1: int) -> np.ndarray:
+def count_transitions(labels: np.ndarray, n_clusters: int, tau: int, nsample: int, TmKp1: int) -> np.ndarray:
     """
-    Return the raw transition count matrix C (without normalisation).
-    Notice that we do not concatenate the pieces of trajectories one after the other
-    to avoid unrealistic transition
-    
-    nsample: the number of trajectories
-    TmKp1 : T - K +1
+    Computes the transition count matrix between clusters.
+
+    This function calculates the number of times a transition occurs from one cluster to another
+    over a given time lag (tau). It iterates through multiple trajectories to build the count matrix,
+    ensuring that transitions are not counted across separate trajectories.
+
+    Args:
+        labels (np.ndarray): A 1D array of cluster labels for all points from all trajectories, concatenated.
+        n_clusters (int): The total number of clusters.
+        tau (int): The time lag for which transitions are counted.
+        nsample (int): The number of trajectories.
+        TmKp1 (int): The length of each trajectory (T - K + 1, where T is the total number of time points
+                     and K is the window size used in a previous step, if any).
+
+    Returns:
+        np.ndarray: A 2D array (n_clusters x n_clusters) representing the raw transition counts,
+                    where C[i, j] is the number of transitions from cluster i to cluster j.
     """
     C = np.zeros((n_clusters, n_clusters), dtype=float)
-    for n in range(nsample):            
+    for n in range(nsample):
         for start in range(TmKp1 - tau):
-            i, j = labels[n*TmKp1+start], labels[n*TmKp1+start + tau]
+            i, j = labels[n * TmKp1 + start], labels[n * TmKp1 + start + tau]
             C[i, j] += 1.0
     return C
 
 def stationary_distribution(P: NDArray[np.float_], tol: float = 1e-12, maxiter: int = 10000) -> NDArray[np.float_]:
     """
-    Compute the stationary distribution π such that πᵀ P = πᵀ.
+    Computes the stationary distribution of a Markov chain.
 
-    Uses power iteration on Pᵀ.
+    This function finds the stationary distribution vector π for a given transition matrix P,
+    such that πᵀ * P = πᵀ. It uses the power iteration method on the transpose of P.
+    If the power iteration does not converge within the specified number of iterations,
+    it falls back to computing the eigenvector corresponding to the eigenvalue 1 of P.T.
 
-    Returns
-    -------
-    pi : 1D ndarray
-        Stationary distribution.
+    Args:
+        P (NDArray[np.float_]): The transition probability matrix (row-stochastic).
+        tol (float): The tolerance for checking convergence of the power iteration.
+        maxiter (int): The maximum number of iterations for the power iteration method.
+
+    Returns:
+        NDArray[np.float_]: A 1D array representing the stationary distribution.
     """
     n = P.shape[0]
     pi = np.ones(n) / n
@@ -44,94 +61,162 @@ def stationary_distribution(P: NDArray[np.float_], tol: float = 1e-12, maxiter: 
         if np.linalg.norm(pi_new - pi, 1) < tol:
             break
         pi = pi_new
-        i+=1
-        if i >= maxiter:            
-            val,vec = np.linalg.eig(P.T)
-            vec = vec[:,np.argsort(val)]
-            #print("return the last eigen_vector")
-            #print(vec[:,-1])
-            #print(np.sum(vec[:,-1]))
-            return np.real(vec[:,-1]/np.sum(vec[:,-1]))
+        i += 1
+        if i >= maxiter:
+            val, vec = np.linalg.eig(P.T)
+            vec = vec[:, np.argsort(val)]
+            return np.real(vec[:, -1] / np.sum(vec[:, -1]))
 
     return pi
 
 def entropy_rate(P: np.ndarray, pi: Optional[np.ndarray] = None) -> float:
-    """Shannon entropy rate *h = -∑_i π_i ∑_j P_ij log P_ij* in *bits* per step.
+    """
+    Calculates the Shannon entropy rate of a Markov chain.
 
-    Parameters
-    ----------
-    P : ndarray, shape (n, n)
-        Row‑stochastic transition matrix.
-    pi : Optional ndarray, shape (n,)
-        Stationary distribution.  If *None* it is computed internally.
-    base : float, default 2.0
-        Logarithm base.  ``base=2`` → bits; ``np.e`` → nats.
+    The entropy rate is a measure of the uncertainty or randomness of a stochastic process.
+    It is computed as h = -∑_i π_i ∑_j P_ij log(P_ij), where π is the stationary distribution
+    and P is the transition matrix. The result is given in nats.
+
+    Args:
+        P (np.ndarray): The row-stochastic transition matrix.
+        pi (Optional[np.ndarray]): The stationary distribution. If None, it is computed internally.
+
+    Returns:
+        float: The Shannon entropy rate in nats per step.
     """
     if pi is None:
         pi = stationary_distribution(P)
     with np.errstate(divide="ignore", invalid="ignore"):
-        logP = np.log(P) #/ np.log(base)
-        logP[np.isneginf(logP)] = 0.0  # define 0·log0 = 0
-        #h= -np.sum(np.sum(P * logP,axis=1)*pi)
+        logP = np.log(P)
+        logP[np.isneginf(logP)] = 0.0  # Define 0 * log(0) = 0
         h = -(pi[:, None] * P * logP).sum()
     return float(h)
 
-def generate_random_points_in_sphere(N, d):
+def generate_random_points_in_sphere(N: int, d: int) -> np.ndarray:
     """
-    Generate N random points in a d-dimensional sphere of radius 1.
+    Generates N uniformly distributed random points within a d-dimensional unit sphere.
+
+    This method ensures a uniform distribution by first generating points on the surface
+    of a hypersphere and then scaling them by a random radius drawn from a distribution
+    that compensates for the change in volume with radius in higher dimensions.
 
     Args:
-        N (int): Number of points to generate.
-        d (int): Dimension of the space.
+        N (int): The number of points to generate.
+        d (int): The dimension of the space.
 
     Returns:
-        np.ndarray: An array of shape (N, d) containing the points.
+        np.ndarray: An array of shape (N, d) containing the generated points.
     """
-    # Generate points from a Gaussian distribution.
     points = np.random.randn(N, d)
-
-    # Normalize each vector to project it onto the surface of a d-sphere.
-    # A small epsilon is added to the norm to avoid division by zero, though it's highly unlikely.
     norm = np.linalg.norm(points, axis=1)[:, np.newaxis]
     points = points / (norm + 1e-10)
-
-    # Generate random radii to ensure uniform distribution within the sphere.
-    # This is done by taking the d-th root of a uniform random number.
-    radii = np.random.rand(N, 1)**(1/d)
-
-    # Scale the points by these radii.
+    radii = np.random.rand(N, 1)**(1 / d)
     points_in_sphere = points * radii
-
     return points_in_sphere
 
-def generate_clustered_points(Nsample,trajectory_length,d,N_centers=10,Radius=4):
+def generate_clustered_points(Nsample: int, trajectory_length: int, d: int, N_centers: int = 10, Radius: int = 4) -> Tuple[np.ndarray, np.ndarray]:
     """
-    generate points uniformly distributed in N_centers, all the centers are also uniformely distributed in a sphere of radius Radius. The points are generated as series of trajectory_length, which is then used to compute transitions from one point to another.
-    In general each trajectory is within one cluster, but to avoid a pathological behavior where there is no transition between clusters at all, we add a trajectory where the transition is only between clusters
+    Generates trajectories of points clustered around several centers.
+
+    This function creates a dataset of trajectories where each trajectory's points are
+    generated from a distribution around a specific cluster center. The centers themselves
+    are randomly distributed within a sphere. To ensure connectivity between clusters,
+    one trajectory is generated by hopping between different cluster centers.
+
+    Args:
+        Nsample (int): The number of trajectories to generate.
+        trajectory_length (int): The number of points in each trajectory.
+        d (int): The dimension of the space.
+        N_centers (int): The number of cluster centers.
+        Radius (int): The radius of the sphere containing the cluster centers.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: A tuple containing:
+            - points (np.ndarray): The generated points, with shape (Nsample, trajectory_length, d).
+            - centers (np.ndarray): The coordinates of the cluster centers.
     """
-
-    points = np.zeros((Nsample,trajectory_length,d),dtype=float)
-
+    points = np.zeros((Nsample, trajectory_length, d), dtype=float)
     centers = generate_random_points_in_sphere(N_centers, d) * Radius
 
-    for n in range(Nsample-1):
-        center_id = np.random.randint(0,N_centers)
-        points[n] = generate_random_points_in_sphere(trajectory_length,d) + centers[center_id]
+    for n in range(Nsample - 1):
+        center_id = np.random.randint(0, N_centers)
+        points[n] = generate_random_points_in_sphere(trajectory_length, d) + centers[center_id]
 
-    center_id = np.random.randint(0,N_centers,trajectory_length)
-    points[-1] = centers[center_id] + generate_random_points_in_sphere(trajectory_length,d)
-    return points,centers
-def compute_entropy(points,n_clusterss,Nsample,trajectory_length,d):
-    h = list()
-    #n_clusterss = [2,3,4,5,10,15,20,30,50,100,200,300,400,500]
+    center_id = np.random.randint(0, N_centers, trajectory_length)
+    points[-1] = centers[center_id] + generate_random_points_in_sphere(trajectory_length, d)
+    return points, centers
+
+def compute_entropy(points: np.ndarray, n_clusterss: List[int], Nsample: int, trajectory_length: int, d: int) -> List[float]:
+    """
+    Computes the entropy rate for different numbers of clusters.
+
+    This function takes a set of trajectories, performs K-Means clustering for each number
+    of clusters specified in `n_clusterss`, and then computes the entropy rate for the
+    resulting Markov chain. This is useful for analyzing how the entropy of the system
+    changes with the granularity of the state space partitioning.
+
+    Args:
+        points (np.ndarray): The trajectory data.
+        n_clusterss (List[int]): A list of numbers of clusters to use for K-Means.
+        Nsample (int): The number of trajectories.
+        trajectory_length (int): The length of each trajectory.
+        d (int): The dimension of the space.
+
+    Returns:
+        List[float]: A list of entropy rates corresponding to each number of clusters.
+    """
+    h = []
     for n_clusters in n_clusterss:
-        #print("number of clusters used for kmeans"+str(n_clusters))
         km = KMeans(n_clusters=n_clusters, n_init="auto", random_state=0)
-        labels = km.fit_predict(points.reshape(-1,d))
-        C = count_transitions(labels, n_clusters,nsample=Nsample, tau = 1,TmKp1 = trajectory_length)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            P = C / C.sum(axis=1, keepdims=True)
-        P[np.isnan(P)] = 0.0  # rows with zero counts
-        pi = stationary_distribution(P)
-        h.append(entropy_rate(P,pi))
+        labels = km.fit_predict(points.reshape(-1, d))
+        h.append(compute_entropy_from_labels(labels, n_clusters, Nsample, trajectory_length, d))
+    return h
+
+def compute_entropy_from_labels(labels: np.ndarray, n_clusters: int, Nsample: int, trajectory_length: int, d: int) -> float:
+    """
+    Computes the entropy rate from pre-computed cluster labels.
+
+    This function calculates the entropy rate of a Markov chain defined by a sequence of
+    cluster labels. It first computes the transition matrix and then the entropy rate.
+
+    Args:
+        labels (np.ndarray): The array of cluster labels.
+        n_clusters (int): The number of clusters.
+        Nsample (int): The number of trajectories.
+        trajectory_length (int): The length of each trajectory.
+        d (int): The dimension of the space.
+
+    Returns:
+        float: The computed entropy rate.
+    """
+    C = count_transitions(labels, n_clusters, nsample=Nsample, tau=1, TmKp1=trajectory_length)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        P = C / C.sum(axis=1, keepdims=True)
+    P[np.isnan(P)] = 0.0  # Handle rows with zero counts
+    pi = stationary_distribution(P)
+    return entropy_rate(P, pi)
+
+def compute_entropy_several_times(points: np.ndarray, n_clusters: int, Nsample: int, trajectory_length: int, d: int, N_times: int) -> List[float]:
+    """
+    Computes the entropy rate multiple times to assess variability.
+
+    This function runs the K-Means clustering and entropy rate calculation multiple times
+    to understand the variability of the results due to the random initialization of K-Means.
+
+    Args:
+        points (np.ndarray): The trajectory data.
+        n_clusters (int): The number of clusters to use.
+        Nsample (int): The number of trajectories.
+        trajectory_length (int): The length of each trajectory.
+        d (int): The dimension of the space.
+        N_times (int): The number of times to repeat the calculation.
+
+    Returns:
+        List[float]: A list of entropy rates from the repeated computations.
+    """
+    h = []
+    for n in range(N_times):
+        km = KMeans(n_clusters=n_clusters, n_init="auto")
+        labels = km.fit_predict(points.reshape(-1, d))
+        h.append(compute_entropy_from_labels(labels, n_clusters, Nsample, trajectory_length, d))
     return h
