@@ -1,5 +1,5 @@
 from src.embedding import Embedding
-from typing import List
+from typing import List, Optional
 import numpy as np
 import pandas as pd
 
@@ -15,7 +15,6 @@ class EmbeddingPosition(Embedding):
         ID_NAME: str = "ID",
     ) -> None:
         self.columns_translated = columns_translated
-        self.D_trans = len(columns_translated)
         self.ID_NAME = ID_NAME
 
         if Y is not None:
@@ -42,6 +41,7 @@ class EmbeddingPosition(Embedding):
 
         self.Y_translated = Y_trans
         super().__init__(data, columns=columns, Y=Y_abs, Nsamples=Nsamples, ID_NAME=ID_NAME)
+        self.D+=len(columns_translated)
 
 
     def make_embedding(self, K: int) -> (np.ndarray, np.ndarray):
@@ -53,7 +53,7 @@ class EmbeddingPosition(Embedding):
         self.K = K
         self.N = self.Y.shape[0]
         self.L = self.T - K + 1
-        total_D = self.K * (self.D + self.D_trans)
+        total_D = self.K * self.D
 
         self.embedding_matrix = np.empty((self.N, self.L, total_D), dtype=float)
         self.flatten_embedding_matrix = np.empty((self.N * self.L, total_D), dtype=float)
@@ -86,6 +86,85 @@ class EmbeddingPosition(Embedding):
                 flatten_out_row += 1
 
         return self.embedding_matrix, self.flatten_embedding_matrix
+
+    def classify_trajectory(self, trajectory_abs: Optional[np.ndarray] = None, trajectory_trans: Optional[np.ndarray] = None) -> np.ndarray:
+        """Classify each point of a single trajectory into a cluster.
+
+        Parameters
+        ----------
+        trajectory_abs : np.ndarray, optional
+            A single trajectory of shape (T, d_abs) for absolute features.
+            Required if the model was trained with absolute features.
+        trajectory_trans : np.ndarray, optional
+            A single trajectory of shape (T, d_trans) for translated features.
+            Required if the model was trained with translated features.
+
+        Returns
+        -------
+        np.ndarray
+            An array of cluster labels for each point in the trajectory.
+        """
+        if self.cluster_centers_ is None:
+            raise RuntimeError("Clustering must be performed first.")
+
+        d_abs_model = len(self.columns)
+        d_trans_model = len(self.columns_translated)
+
+        if d_abs_model > 0 and trajectory_abs is None:
+            raise ValueError("Model was trained with absolute features, but 'trajectory_abs' was not provided.")
+        if d_trans_model > 0 and trajectory_trans is None:
+            raise ValueError("Model was trained with translated features, but 'trajectory_trans' was not provided.")
+        if d_abs_model == 0 and trajectory_abs is not None:
+            raise ValueError("'trajectory_abs' was provided, but model was not trained with absolute features.")
+        if d_trans_model == 0 and trajectory_trans is not None:
+            raise ValueError("'trajectory_trans' was provided, but model was not trained with translated features.")
+
+        # Determine trajectory length and check consistency
+        T = -1
+        if trajectory_abs is not None:
+            T = trajectory_abs.shape[0]
+            if trajectory_abs.shape[1] != d_abs_model:
+                raise ValueError(f"trajectory_abs has wrong dimension {trajectory_abs.shape[1]}, expected {d_abs_model}")
+        if trajectory_trans is not None:
+            if T != -1 and trajectory_trans.shape[0] != T:
+                raise ValueError("Absolute and translated trajectories must have the same length.")
+            T = trajectory_trans.shape[0]
+            if trajectory_trans.shape[1] != d_trans_model:
+                raise ValueError(f"trajectory_trans has wrong dimension {trajectory_trans.shape[1]}, expected {d_trans_model}")
+
+        if T == -1:
+            if d_abs_model > 0 or d_trans_model > 0:
+                raise ValueError("At least one trajectory must be provided.")
+            else: # No features were used in the model, so no classification is possible.
+                return np.array([])
+
+
+        L = T - self.K + 1
+        if L < 1:
+            raise ValueError("Trajectory is too short for the given embedding window K.")
+
+        total_embedded_dim = self.K * (d_abs_model + d_trans_model)
+        embedded_trajectory = np.empty((L, total_embedded_dim), dtype=float)
+
+        for t in range(L):
+            windows = []
+            if trajectory_abs is not None:
+                win_abs = trajectory_abs[t:t + self.K]
+                windows.append(win_abs)
+            
+            if trajectory_trans is not None:
+                win_rel = self.canonicalize_trajectory(trajectory_trans[t:t + self.K])
+                windows.append(win_rel)
+            
+            if windows:
+                combined = np.concatenate(windows, axis=1)
+                embedded_trajectory[t] = combined.reshape(-1)
+
+        from scipy.spatial.distance import cdist
+        distances = cdist(embedded_trajectory, self.cluster_centers_)
+        labels = np.argmin(distances, axis=1)
+        
+        return labels
 
     @staticmethod
     def canonicalize_trajectory(coords, *, return_rotation=False, tol=1e-12):

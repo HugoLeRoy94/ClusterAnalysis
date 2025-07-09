@@ -158,6 +158,43 @@ class Embedding:
             self.cluster_centers_ = np.array(medoids)
 
         return self.labels
+
+    def classify_trajectory(self, trajectory: np.ndarray) -> np.ndarray:
+        """Classify each point of a single trajectory into a cluster.
+
+        Parameters
+        ----------
+        trajectory : np.ndarray
+            A single trajectory of shape (T, d).
+
+        Returns
+        -------
+        np.ndarray
+            An array of cluster labels for each point in the trajectory.
+        """
+        if self.cluster_centers_ is None:
+            raise RuntimeError("Clustering must be performed first.")
+        
+        # Perform time-delay embedding on the trajectory
+        T, d = trajectory.shape
+        if d != self.D:
+            raise ValueError(f"Trajectory has wrong dimension {d}, expected {self.D}")
+        
+        L = T - self.K + 1
+        if L < 1:
+            raise ValueError("Trajectory is too short for the given embedding window K.")
+
+        embedded_trajectory = np.empty((L, self.K * self.D), dtype=float)
+        for t in range(L):
+            embedded_trajectory[t] = trajectory[t:t + self.K].reshape(-1)
+
+        # For each embedded vector, find the closest cluster center
+        from scipy.spatial.distance import cdist
+        distances = cdist(embedded_trajectory, self.cluster_centers_)
+        labels = np.argmin(distances, axis=1)
+        
+        return labels
+
     def make_transition_matrix(
         self,
         tau: int = 1,
@@ -200,8 +237,8 @@ class Embedding:
         evals = np.linalg.eigvals(self.P)
         evals = np.real(evals)
         evals = evals[np.argsort(-evals)]  # descending order; λ₀ = 1 comes first
-        #return -lag / np.log(np.clip(evals[1:], 1e-15, 1 - 1e-15))
-        return tau/(1-evals[1:])
+        return -tau / np.log(np.clip(evals[1:], 1e-15, 1 - 1e-15))
+        #return tau/(1-evals[1:])
     # ------------------------------------------------------------------
     # Simulate trajectories
     # ------------------------------------------------------------------        
