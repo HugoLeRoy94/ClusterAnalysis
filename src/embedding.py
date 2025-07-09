@@ -7,8 +7,11 @@ import pandas as pd
 from numpy.typing import ArrayLike, NDArray
 from sklearn.cluster import KMeans, MiniBatchKMeans
 from sklearn.cluster import SpectralClustering
+from sklearn_extra.cluster import KMedoids
 from pyclustering.cluster.kmedoids import kmedoids
 from pyclustering.utils.metric import distance_metric, type_metric
+from scipy.spatial.distance import squareform
+from src.distance import compute_condensed_distance_matrix
 
 import umap
 
@@ -39,10 +42,12 @@ class Embedding:
         Y: np.ndarray | None = None,
         Nsamples: int | str = "all",
         ID_NAME: str = "ID",
+        n_subsample: Optional[int] = None,
     ) -> None:
         self.columns = columns
         self.D = len(columns)
         self.ID_NAME = ID_NAME
+        self.n_subsample = n_subsample
         # Grab at most *Nsamples* trajectories
         # Re‑index time per trajectory so that T is consistent across worms        
         if Y is None:
@@ -73,6 +78,8 @@ class Embedding:
         self.P: Optional[np.ndarray] = None
         self.pi: Optional[np.ndarray] = None
         self.state: Optional[int]=None
+        self.indices: Optional[np.ndarray] = None
+        self.distance_matrix: Optional[np.ndarray] = None
 
 
     # ---------------------------------------------------------------------
@@ -116,7 +123,42 @@ class Embedding:
     # ------------------------------------------------------------------
     # Clustering
     # ------------------------------------------------------------------
-    def make_cluster(self, n_clusters: int, random_state: int = 0, n_subsample: Optional[int] = None, clustering_method: str = 'kmeans', batchsize: Optional[int] = None, tol: float = 0.001) -> np.ndarray:
+    def set_subsample(self, n_subsample: int, random_state: int = 0) -> None:
+        """Generate and store indices for a random subsample of the data."""
+        if self.flatten_embedding_matrix is None:
+            raise RuntimeError("Call make_embedding() first.")
+        
+        if n_subsample > self.flatten_embedding_matrix.shape[0]:
+            raise ValueError("n_subsample cannot be greater than the total number of samples.")
+
+        rng = np.random.default_rng(random_state)
+        self.indices = rng.choice(self.flatten_embedding_matrix.shape[0], n_subsample, replace=False)
+
+    def fit_umap(self, n_neighbors: int = 15, min_dist: float = 0.1,with_cluster_centers = False) -> np.ndarray:
+        """Fit a UMAP model and return the embedding.
+        """
+        if self.flatten_embedding_matrix is None:
+            raise RuntimeError("Call make_embedding() first.")
+
+        if self.n_subsample is not None and self.indices is None:
+            self.set_subsample(self.n_subsample, random_state=random_state)
+
+        if self.indices is not None:
+            data_to_embed = self.flatten_embedding_matrix[self.indices]
+        else:
+            data_to_embed = self.flatten_embedding_matrix
+        
+        if with_cluster_centers:
+            if self.cluster_centers_ is not None:
+                data_to_embed = np.append(data_to_embed,self.cluster_centers_,axis=0)
+
+        reducer = umap.UMAP(n_neighbors=n_neighbors, min_dist=min_dist,n_components=2,metric="euclidean")
+        reduced_all = reducer.fit_transform(data_to_embed)
+        reduced_points = reduced_all[:self.n_subsample]
+        reduced_centers = reduced_all[self.n_subsample:]
+        return reduced_points,reduced_centers
+
+    def make_cluster(self, n_clusters: int, random_state: int = 0, clustering_method: str = 'kmeans', batchsize: Optional[int] = None, tol: float = 0.001,degree : int =5) -> np.ndarray:
         """Run clustering on the embedding matrix and store the labels.
         Returns the 1‑D label array of length *self.embedding_matrix.shape[0]*.
         """
@@ -126,13 +168,23 @@ class Embedding:
             raise ValueError("n_clusters must be lower than the number of samples")
         self.n_clusters = n_clusters
 
-        X = self.flatten_embedding_matrix
-        subset = X if n_subsample is None else X[:n_subsample]
+        if self.n_subsample is not None and self.indices is None:
+            self.set_subsample(self.n_subsample, random_state=random_state)
+
+        if self.indices is not None:
+            subset = self.flatten_embedding_matrix[self.indices]
+        else:
+            subset = self.flatten_embedding_matrix
 
         if clustering_method == 'kmeans':
             km = KMeans(n_clusters=n_clusters, n_init="auto", random_state=random_state)
-            self.labels = km.fit_predict(subset)
+            labels_subsample = km.fit_predict(subset)
             self.cluster_centers_ = km.cluster_centers_
+            # Predict labels for the entire dataset
+            from scipy.spatial.distance import cdist
+            distances = cdist(self.flatten_embedding_matrix, self.cluster_centers_)
+            self.labels = np.argmin(distances, axis=1)
+
         elif clustering_method == 'spectral':
             sc = SpectralClustering(n_clusters=n_clusters, affinity='nearest_neighbors', assign_labels='kmeans', random_state=random_state)
             self.labels = sc.fit_predict(subset)
@@ -156,9 +208,18 @@ class Embedding:
                 labels[cluster] = kc
             self.labels = labels
             self.cluster_centers_ = np.array(medoids)
-
+        elif clustering_method == 'polynomial_distances':
+            if self.distance_matrix is None:
+                subset_reshape = np.ascontiguousarray(subset.reshape(subset.shape[0],self.K,self.D),dtype=np.float32)
+                distance_matrix = squareform(compute_condensed_distance_matrix(subset_reshape,degree))
+            model = KMedoids(n_clusters=n_clusters,
+                     metric='precomputed',
+                     init='k-medoids++',
+                     random_state=random_state)
+            model.fit(distance_matrix)
+            self.labels = model.labels_
+            self.cluster_centers_ = self.flatten_embedding_matrix[self.indices[model.medoid_indices_]]
         return self.labels
-
     def classify_trajectory(self, trajectory: np.ndarray) -> np.ndarray:
         """Classify each point of a single trajectory into a cluster.
 

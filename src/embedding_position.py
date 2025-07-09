@@ -13,6 +13,7 @@ class EmbeddingPosition(Embedding):
         Y: np.ndarray | None = None,
         Nsamples: int | str = "all",
         ID_NAME: str = "ID",
+        n_subsample: Optional[int] = None
     ) -> None:
         self.columns_translated = columns_translated
         self.ID_NAME = ID_NAME
@@ -40,7 +41,7 @@ class EmbeddingPosition(Embedding):
         Y_trans = np.stack([traj[:T_min] for traj in trajs_trans])
 
         self.Y_translated = Y_trans
-        super().__init__(data, columns=columns, Y=Y_abs, Nsamples=Nsamples, ID_NAME=ID_NAME)
+        super().__init__(data, columns=columns, Y=Y_abs, Nsamples=Nsamples, ID_NAME=ID_NAME,n_subsample=n_subsample)
         self.D+=len(columns_translated)
 
 
