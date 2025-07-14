@@ -2,6 +2,7 @@ from src.embedding import Embedding
 from typing import List, Optional
 import numpy as np
 import pandas as pd
+from src.trajectory_utils import canonicalize_trajectory
 
 
 class EmbeddingPosition(Embedding):
@@ -72,7 +73,7 @@ class EmbeddingPosition(Embedding):
 
                 # win_abs: (K, d_abs), win_rel: (K, d_rel)
                 win_abs = self.Y[n, t:t + K]                     # shape (K, d_abs)
-                win_rel = self.canonicalize_trajectory(self.Y_translated[n, t:t + K])  # shape (K, d_rel)
+                win_rel = canonicalize_trajectory(self.Y_translated[n, t:t + K])  # shape (K, d_rel)
 
                 # Concatenate per-time-step: result is (K, d_abs + d_rel)
                 combined = np.concatenate([win_abs, win_rel], axis=1)
@@ -154,7 +155,7 @@ class EmbeddingPosition(Embedding):
                 windows.append(win_abs)
             
             if trajectory_trans is not None:
-                win_rel = self.canonicalize_trajectory(trajectory_trans[t:t + self.K])
+                win_rel = canonicalize_trajectory(trajectory_trans[t:t + self.K])
                 windows.append(win_rel)
             
             if windows:
@@ -166,49 +167,3 @@ class EmbeddingPosition(Embedding):
         labels = np.argmin(distances, axis=1)
         
         return labels
-
-    @staticmethod
-    def canonicalize_trajectory(coords, *, return_rotation=False, tol=1e-12):
-        """
-        Rotate `coords` (K×3) into a unique canonical frame.
-        Any rigid-body rotation + translation of the same trajectory
-        maps to the *identical* output.
-
-        Algorithm
-        ---------
-        1.  centre at the centroid
-        2.  PCA → eigenvectors V (columns)
-        3.  for each axis j:                       # sign disambiguation
-            m3 = Σ (x_j')³   (third central moment)
-            if |m3| < tol use   Σ x_j'² x_{j+1}'
-            flip V[:,j] if m3 < 0
-        4.  make the basis right-handed (det = +1)
-        5.  rotated = centred @ V
-
-        Returns
-        -------
-        canon : (K,3)  canonical coordinates (centroid at the origin)
-        R      : (3,3) rotation matrix  (only if `return_rotation=True`)
-        """
-
-        X   = np.asarray(coords, dtype=float)
-        C   = X - X.mean(axis=0)               # 1
-        _,  _, Vt = np.linalg.svd(C, full_matrices=False)
-        V   = Vt.T                             # 2
-
-        Y   = C @ V                            # projections for moments
-        for j in range(3):                     # 3
-            m3 = (Y[:, j] ** 3).sum()
-            if abs(m3) < tol:                  # nearly symmetric
-                k = (j + 1) % 3
-                m3 = (Y[:, j]**2 * Y[:, k]).sum()
-            if m3 < 0:
-                V[:, j] *= -1
-                Y[:, j] *= -1
-
-        if np.linalg.det(V) < 0:               # 4
-            V[:, 2] *= -1
-            Y[:, 2] *= -1
-
-        canon = Y                               # 5
-        return (canon, V) if return_rotation else canon

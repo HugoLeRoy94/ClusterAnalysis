@@ -1,3 +1,5 @@
+
+
 from __future__ import annotations
 
 from typing import List, Optional, Tuple
@@ -12,6 +14,16 @@ from pyclustering.cluster.kmedoids import kmedoids
 from pyclustering.utils.metric import distance_metric, type_metric
 from scipy.spatial.distance import squareform
 from src.distance import compute_condensed_distance_matrix
+from src.trajectory_utils import (
+    count_transitions,
+    stationary_distribution,
+    entropy_rate,
+    time_reversed_transition_matrix,
+    metastability,
+    reconstruct_Y_from_embedding,
+    embed_move_type,
+)
+
 
 import umap
 
@@ -264,17 +276,17 @@ class Embedding:
         if self.labels is None:
             raise RuntimeError("Need labels; call cluster() or pass them explicitly.")        
         self.tau = tau
-        C = self.count_transitions(self.labels, self.n_clusters, tau = self.tau,nsample = self.Nsample,TmKp1 = self.T - self.K +1)
+        C = count_transitions(self.labels, self.n_clusters, tau = self.tau,nsample = self.Nsample,TmKp1 = self.T - self.K +1)
         with np.errstate(divide="ignore", invalid="ignore"):
             self.P = C / C.sum(axis=1, keepdims=True)
         self.P[np.isnan(self.P)] = 0.0  # rows with zero counts
-        self.pi = self.stationary_distribution(self.P)
+        self.pi = stationary_distribution(self.P)
         return self.P
 
     def reversibilized_matrix(self):
         if self.pi is None or self.P is None:
             raise RuntimeError("need a stationary distribution and a stochastic matrix first")
-        rev_P = self.time_reversed_transition_matrix(self.P,self.pi)
+        rev_P = time_reversed_transition_matrix(self.P,self.pi)
         self.Pr = 0.5*(self.P+rev_P)
         return self.Pr
 
@@ -323,158 +335,4 @@ class Embedding:
         rd = np.random.randint(0,1000)/1000.
         self.state= np.searchsorted(cum_prob_array,rd , side='right')
         return self.state
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-    """
-       ▄▄▄  ■  ▗▞▀▜▌   ■  ▄ ▗▞▀▘    ▗▞▀▀▘█  ▐▌▄▄▄▄  ▗▞▀▘   ■  ▄  ▄▄▄  ▄▄▄▄   ▄▄▄ 
-    ▀▄ ▗▄▟▙▄▖▝▚▄▟▌▗▄▟▙▄▖▄ ▝▚▄▖    ▐▌   ▀▄▄▞▘█   █ ▝▚▄▖▗▄▟▙▄▖▄ █   █ █   █ ▀▄▄  
-     ▄▄▄▀ ▐▌         ▐▌  █         ▐▛▀▘      █   █       ▐▌  █ ▀▄▄▄▀ █   █ ▄▄▄▀ 
-          ▐▌         ▐▌  █         ▐▌                    ▐▌  █                  
-          ▐▌         ▐▌                                  ▐▌                     
-    """
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-    @staticmethod
-    def count_transitions(labels: np.ndarray, n_clusters: int, tau: int,nsample: int, TmKp1: int) -> np.ndarray:
-        """
-        Return the raw transition count matrix C (without normalisation).
-        Notice that we do not concatenate the pieces of trajectories one after the other
-        to avoid unrealistic transition
-        
-        nsample: the number of trajectories
-        TmKp1 : T - K +1
-        """
-        C = np.zeros((n_clusters, n_clusters), dtype=float)
-        for n in range(nsample):            
-            for start in range(TmKp1 - tau):
-                i, j = labels[n*TmKp1+start], labels[n*TmKp1+start + tau]
-                C[i, j] += 1.0
-        return C
 
-    @staticmethod
-    def stationary_distribution(P: NDArray[np.float_], tol: float = 1e-12, maxiter: int = 10000) -> NDArray[np.float_]:
-        """
-        Compute the stationary distribution π such that πᵀ P = πᵀ.
-
-        Uses power iteration on Pᵀ.
-
-        Returns
-        -------
-        pi : 1D ndarray
-            Stationary distribution.
-        """
-        n = P.shape[0]
-        pi = np.ones(n) / n
-        i = 0
-        while True:
-            pi_new = pi @ P
-            if np.linalg.norm(pi_new - pi, 1) < tol:
-                break
-            pi = pi_new
-            i+=1
-            if i >= maxiter:
-                val,vec = np.linalg.eig(P.T)
-                vec = vec[:,np.argsort(np.real(val))]            
-                return np.real(vec[:,-1]/np.sum(vec[:,-1]))
-
-        return pi
-    @staticmethod
-    def entropy_rate(P: np.ndarray, pi: Optional[np.ndarray] = None) -> float:
-        """Shannon entropy rate *h = -∑_i π_i ∑_j P_ij log P_ij* in *bits* per step.
-
-        Parameters
-        ----------
-        P : ndarray, shape (n, n)
-            Row‑stochastic transition matrix.
-        pi : Optional ndarray, shape (n,)
-            Stationary distribution.  If *None* it is computed internally.
-        base : float, default 2.0
-            Logarithm base.  ``base=2`` → bits; ``np.e`` → nats.
-        """
-        if pi is None:
-            pi = Embedding.stationary_distribution(P)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            logP = np.log(P) #/ np.log(base)
-            logP[np.isneginf(logP)] = 0.0  # define 0·log0 = 0
-            #h= -np.sum(np.sum(P * logP,axis=1)*pi)
-            h = -(pi[:, None] * P * logP).sum()
-        return float(h)
-    @staticmethod
-    def time_reversed_transition_matrix(P: np.ndarray, pi: np.ndarray, eps=1e-15) -> np.ndarray:
-        """
-        Compute the time-reversed transition matrix from a row-stochastic matrix P and stationary distribution pi.
-
-        Parameters
-        ----------
-        P : (N, N) ndarray
-            Row-stochastic transition matrix P_{ij} = P(i → j)
-        pi : (N,) ndarray
-            Stationary distribution pi[i] > 0 and sum(pi) == 1
-        eps : float
-            Small number to avoid division by zero
-
-        Returns
-        -------
-        P_rev : (N, N) ndarray
-            Time-reversed transition matrix: P_{ij}(-tau)
-        """
-        pi = np.asarray(pi, dtype=float)
-        P  = np.asarray(P, dtype=float)
-
-        if P.shape[0] != P.shape[1] or P.shape[0] != pi.shape[0]:
-            raise ValueError("Shape mismatch: P must be (N, N) and pi must be (N,)")
-        P_rev = np.zeros(P.shape,dtype=float)
-        for i in range(P.shape[0]):
-            for j in range(P.shape[1]):
-                if pi[i]!=0:
-                    P_rev[i,j] = pi[j]*P[j,i]/pi[i]
-
-        return P_rev
-    @staticmethod
-    def metastability(P: NDArray[np.float_], pi: NDArray[np.float_], S: NDArray[np.int_]) -> float:
-        """
-        Metastability of a subset S:
-        Probability of remaining in S after one step, conditioned on being in S.
-
-        h(S) = ∑_{i∈S, j∈S} π_i P_ij / ∑_{i∈S} π_i
-        """
-        pi_S = pi[S]
-        P_SS = P[np.ix_(S, S)]
-        numer = np.sum(pi_S[:, None] * P_SS)
-        denom = np.sum(pi_S)
-        return numer / denom if denom > 0 else 0.0
-
-    @staticmethod
-    def reconstruct_Y_from_embedding(embedding_matrix: np.ndarray, K: int, d: int) -> np.ndarray:
-        """
-        Reconstruct the original Y array of shape (N, T, d) from the embedding_matrix.
-
-        Parameters
-        ----------
-        embedding_matrix : ndarray of shape (N, T-K+1, K*d)
-            The delay embedding for N trajectories.
-        K : int
-            The delay length.
-        d : int
-            Number of dynamical coordinates.
-
-        Returns
-        -------
-        Y : ndarray of shape (N, T, d)
-            Reconstructed original trajectories (approximately).
-        """
-        N, L, _ = embedding_matrix.shape
-        T = L + K - 1
-        Y = np.zeros((N, T, d), dtype=embedding_matrix.dtype)
-        counts = np.zeros((N, T, d), dtype=int)
-
-        for t in range(L):
-            window = embedding_matrix[:, t].reshape(N, K, d)
-            for k in range(K):
-                Y[:, t + k] += window[:, k]
-                counts[:, t + k] += 1
-
-        # Average overlapping entries
-        counts[counts == 0] = 1  # avoid divide-by-zero
-        Y /= counts
-        return Y
