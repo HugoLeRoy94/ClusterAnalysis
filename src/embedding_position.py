@@ -1,11 +1,12 @@
-from src.embedding import Embedding
+from src.embedding_base import EmbeddingBase
+from src.markov_analysis import MarkovAnalysis
 from typing import List, Optional
 import numpy as np
 import pandas as pd
 from src.trajectory_utils import canonicalize_trajectory
 
 
-class EmbeddingPosition(Embedding):
+class EmbeddingPosition(EmbeddingBase):
     def __init__(
         self,
         data: pd.DataFrame,
@@ -42,14 +43,13 @@ class EmbeddingPosition(Embedding):
         Y_trans = np.stack([traj[:T_min] for traj in trajs_trans])
 
         self.Y_translated = Y_trans
-        super().__init__(data, columns=columns, Y=Y_abs, Nsamples=Nsamples, ID_NAME=ID_NAME,n_subsample=n_subsample)
-        self.D+=len(columns_translated)
-
+        super().__init__(data, columns=columns, Y=Y_abs, Nsamples=Nsamples, ID_NAME=ID_NAME, n_subsample=n_subsample)
+        self.D += len(columns_translated)
 
     def make_embedding(self, K: int) -> (np.ndarray, np.ndarray):
         if K < 3 or K > self.T:
             # minimum value of K for the SVD in canonicalize trajectory, where V the rotation matrix
-            # will have the dimension min(K,d). 
+            # will have the dimension min(K,d).
             raise ValueError("K must be in the range [3, T]")
 
         self.K = K
@@ -167,3 +167,9 @@ class EmbeddingPosition(Embedding):
         labels = np.argmin(distances, axis=1)
         
         return labels
+
+    def analyze_markov_process(self) -> MarkovAnalysis:
+        """Create and return a MarkovAnalysis object."""
+        if self.labels is None:
+            raise RuntimeError("Need labels; call make_cluster() first.")
+        return MarkovAnalysis(self)
