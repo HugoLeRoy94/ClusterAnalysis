@@ -76,3 +76,13 @@ def label_clusters(
         })
 
     return cluster_freq
+
+def compute_stereotypy_of_states(trajectory : pd.DataFrame, 
+                                labels : np.ndarray,
+                                K : int,
+                                ID_NAME: str='label',
+                                ):
+    embedded_stereo = embed_move_type(trajectory,K=K,ID_NAME=ID_NAME)
+    embedded_counter = average_out(embedded_stereo,K)
+    label_clusters(n_clusters = Counter(labels).keys().__len__(), labels = labels,embedded_counter = embedded_counter)
+    return label_clusters
