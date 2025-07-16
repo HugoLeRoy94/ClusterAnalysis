@@ -1,5 +1,5 @@
 from src.embedding_base import EmbeddingBase
-from src.markov_analysis import MarkovAnalysis
+from src.markov_analysis import Markov
 from typing import List, Optional
 import numpy as np
 import pandas as pd
@@ -168,8 +168,8 @@ class EmbeddingPosition(EmbeddingBase):
         
         return labels
 
-    def analyze_markov_process(self) -> MarkovAnalysis:
+    def analyze_markov_process(self) -> Markov:
         """Create and return a MarkovAnalysis object."""
         if self.labels is None:
             raise RuntimeError("Need labels; call make_cluster() first.")
-        return MarkovAnalysis(self)
+        return Markov(self)

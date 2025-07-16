@@ -9,7 +9,7 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from src.embedding_base import EmbeddingBase
-from src.markov_analysis import MarkovAnalysis
+from src.markov_analysis import Markov,StochasticMatrix
 
 __all__ = ["Embedding"]
 
@@ -45,11 +45,11 @@ class Embedding(EmbeddingBase):
         self.pi: Optional[np.ndarray] = None
         self.state: Optional[int] = None
 
-    def analyze_markov_process(self) -> MarkovAnalysis:
+    def analyze_markov_process(self) -> Markov:
         """Create and return a MarkovAnalysis object."""
         if self.labels is None:
             raise RuntimeError("Need labels; call make_cluster() first.")
-        return MarkovAnalysis(self)
+        return Markov(self)
 
     def __repr__(self) -> str:  # pragma: no cover – just convenience
         out = [f"Embedding(K={self.K}, Ntraj={self.Y.shape[0]}, dims={self.D})"]
