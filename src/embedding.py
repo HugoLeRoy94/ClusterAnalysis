@@ -36,11 +36,11 @@ class Embedding(EmbeddingBase):
         data: pd.DataFrame,
         columns: List[str],
         Y: np.ndarray | None = None,
-        Nsamples: int | str = "all",
         ID_NAME: str = "ID",
-        n_subsample: Optional[int] = None,
+        n_trajectories: Optional[int] = None,
+        n_windows: Optional[int] = None,
     ) -> None:
-        super().__init__(data, columns, Y, Nsamples, ID_NAME, n_subsample)
+        super().__init__(data, columns, Y, ID_NAME, n_trajectories,n_windows)
         self.P: Optional[np.ndarray] = None
         self.pi: Optional[np.ndarray] = None
         self.state: Optional[int] = None

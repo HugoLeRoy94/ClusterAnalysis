@@ -6,7 +6,7 @@ Optionally overlay cluster centers and subsample data to reduce load.
 
 Usage:
     ./scripts/04_find_umap.py \
-        --embedding data/copepods/processed/embedding.pkl \
+        --embedding data/copepods/processed/ \
         --output data/copepods/processed/umap.npy \
         --subsample 1000 \
         --cluster-centers True \
@@ -28,7 +28,7 @@ from umap import UMAP
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Compute 2D UMAP from embedding matrix")
-    parser.add_argument("--embedding", type=str, required=True, help="Path to embedding.npy (shape N, T-K+1, K·d)")
+    parser.add_argument("--input", type=str, required=True, help="Path to embedding.pkl and markov.pkl")
     parser.add_argument("--output", type=str, required=True, help="Path to save UMAP coordinates (.npy)")
     parser.add_argument("--subsample", type=int, default=None, help="Number of rows to subsample from the flattened matrix")
     parser.add_argument("--cluster-centers", type=bool, default=False, help="Optional bool whether we plot the clusters")
@@ -45,8 +45,10 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load and flatten embedding    
-    with open(args.embedding, "rb") as f:
+    with open(args.input+"embedding.pkl", "rb") as f:
         emb = pickle.load(f)
+    #with open(args.input+"markov.pkl","rb") as f:
+    #    mkv = pickle.load(f)
     print(f"[INFO] Loaded embedding")
     print(emb)     
 
@@ -80,6 +82,8 @@ def main():
         N = data.shape[0]
         reduced_points = reduced_all[:N]
         reduced_centers = reduced_all[N:N + emb.cluster_centers_.shape[0]]
+        print(reduced_centers.shape)
+        print(reduced_points.shape)
         print(f"[INFO] Saved UMAP coordinates to {output_dir}/umap_centers.npy")
         np.save(output_dir / "umap_centers.npy", reduced_centers)
     else:

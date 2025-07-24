@@ -24,6 +24,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from src.io import load_dataframe
 from src.embedding import Embedding
 from src.embedding_position import EmbeddingPosition
+from src.markov_analysis import *
 
 
 def parse_args():
@@ -39,6 +40,8 @@ def parse_args():
     parser.add_argument("--tau", type=int, required=True)
     parser.add_argument("--groupby", type=str, default="label")
     parser.add_argument("--random-state", type=int, default=0)
+    parser.add_argument("--n-trajectories", type=int,default=None)
+    parser.add_argument("--n-windows", type=int,default=None)
     return parser.parse_args()
 
 
@@ -63,20 +66,21 @@ def main():
         #emb = Embedding(df, columns=feature_cols,ID_NAME='label')
         # Build embedding object
         if args.columns_trans is None:
-            emb = Embedding(df, columns=feature_cols, ID_NAME=args.groupby)
+            emb = Embedding(df, columns=feature_cols, ID_NAME=args.groupby,n_trajectories=args.n_trajectories,n_windows=args.n_windows)
         else :
             feature_cols_trans = args.columns_trans.split(",")
-            emb = EmbeddingPosition(df, columns=feature_cols,columns_translated = feature_cols_trans,ID_NAME=args.groupby)
+            emb = EmbeddingPosition(df, columns=feature_cols,columns_translated = feature_cols_trans,ID_NAME=args.groupby,n_trajectories = args.n_trajectories,n_windows=args.n_windows)
         
         emb_matrix, flat_matrix = emb.make_embedding(K)
         L = emb_matrix.shape[1]
-        N_traj = emb_matrix.shape[0]        
+        N_traj = emb_matrix.shape[0]
 
         for n_clusters in n_clusters_values:
             print(f"[INFO]   Clustering with {n_clusters} clusters")
             emb.make_cluster(n_clusters=n_clusters, random_state=args.random_state)
-            emb.make_transition_matrix(tau = args.tau)
-            h = emb.entropy_rate(emb.P, emb.pi)
+            #emb.make_transition_matrix(tau = args.tau)
+            mkv = Markov(emb,tau = args.tau)
+            h = mkv.compute_entropy_rate()
 
             results.append({
                 "K": K,

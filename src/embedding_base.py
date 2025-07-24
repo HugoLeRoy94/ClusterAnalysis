@@ -26,21 +26,23 @@ class EmbeddingBase:
         data: pd.DataFrame,
         columns: List[str],
         Y: np.ndarray | None = None,
-        Nsamples: int | str = "all",
         ID_NAME: str = "ID",
-        n_subsample: Optional[int] = None,
+        n_trajectories: Optional[int] = None,
+        n_windows: Optional[int] = None,
     ) -> None:
         self.columns = columns
         self.D = len(columns)
         self.ID_NAME = ID_NAME
-        self.n_subsample = n_subsample
+        self.n_trajectories = n_trajectories
+        self.n_windows = n_windows
         # Grab at most *Nsamples* trajectories
         # Re‑index time per trajectory so that T is consistent across worms
         if Y is None:
-            if Nsamples == "all":
+            if self.n_trajectories is None:
                 wanted_ids = data[ID_NAME].unique()
             else:
-                wanted_ids = data[ID_NAME].unique()[: int(Nsamples)]
+                rng = np.random.default_rng(seed=42)  # or pass the seed as an argument
+                wanted_ids = rng.choice(data[ID_NAME].unique(), size=int(self.n_trajectories), replace=False)
             subset = data[data[ID_NAME].isin(wanted_ids)]
             trajs = []
             T_min = np.inf
@@ -99,24 +101,23 @@ class EmbeddingBase:
             self.embedded_av_torsion_velocity = np.mean(self.flatten_embedding_matrix[:, 2::3], axis=1)
             return self.embedded_av_velocity, self.embedded_av_ang_velocity, self.embedded_av_torsion_velocity
 
-    def set_subsample(self, n_subsample: int, random_state: int = 0) -> None:
-        """Generate and store indices for a random subsample of the data."""
+    def set_n_windows(self, random_state: int = 0) -> None:
         if self.flatten_embedding_matrix is None:
             raise RuntimeError("Call make_embedding() first.")
-
-        if n_subsample > self.flatten_embedding_matrix.shape[0]:
-            raise ValueError("n_subsample cannot be greater than the total number of samples.")
-
+        if self.n_windows is None:
+            return  # no window subsampling
+        if self.n_windows > self.flatten_embedding_matrix.shape[0]:
+            raise ValueError("n_windows too large")
         rng = np.random.default_rng(random_state)
-        self.indices = rng.choice(self.flatten_embedding_matrix.shape[0], n_subsample, replace=False)
+        self.indices = rng.choice(self.flatten_embedding_matrix.shape[0], self.n_windows, replace=False)
 
     def fit_umap(self, n_neighbors: int = 15, min_dist: float = 0.1, with_cluster_centers=False) -> np.ndarray:
         """Fit a UMAP model and return the embedding."""
         if self.flatten_embedding_matrix is None:
             raise RuntimeError("Call make_embedding() first.")
 
-        if self.n_subsample is not None and self.indices is None:
-            self.set_subsample(self.n_subsample)
+        if self.n_windows is not None and self.indices is None:
+            self.set_n_windows()
 
         if self.indices is not None:
             data_to_embed = self.flatten_embedding_matrix[self.indices]
@@ -129,8 +130,8 @@ class EmbeddingBase:
 
         reducer = umap.UMAP(n_neighbors=n_neighbors, min_dist=min_dist, n_components=2, metric="euclidean")
         reduced_all = reducer.fit_transform(data_to_embed)
-        reduced_points = reduced_all[:self.n_subsample]
-        reduced_centers = reduced_all[self.n_subsample:]
+        reduced_points = reduced_all[:self.n_windows]
+        reduced_centers = reduced_all[self.n_windows:]
         return reduced_points, reduced_centers
 
     def make_cluster(self, n_clusters: int, random_state: int = 0, clustering_method: str = 'kmeans', batchsize: Optional[int] = None, tol: float = 0.001, degree: int = 5) -> np.ndarray:
@@ -143,8 +144,8 @@ class EmbeddingBase:
             raise ValueError("n_clusters must be lower than the number of samples")
         self.n_clusters = n_clusters
 
-        if self.n_subsample is not None and self.indices is None:
-            self.set_subsample(self.n_subsample, random_state=random_state)
+        if self.n_windows is not None and self.indices is None:
+            self.set_n_windows( random_state=random_state)
 
         if self.indices is not None:
             subset = self.flatten_embedding_matrix[self.indices]

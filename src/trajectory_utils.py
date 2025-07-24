@@ -92,6 +92,26 @@ def metastability(P: NDArray[np.float_], pi: NDArray[np.float_], S: NDArray[np.i
     numer = np.sum(pi_S[:, None] * P_SS)
     denom = np.sum(pi_S)
     return numer / denom if denom > 0 else 0.0
+def entropy_rate(P: np.ndarray, pi: Optional[np.ndarray] = None) -> float:
+    """Shannon entropy rate *h = -∑_i π_i ∑_j P_ij log P_ij* in *bits* per step.
+
+    Parameters
+    ----------
+    P : ndarray, shape (n, n)
+        Row‑stochastic transition matrix.
+    pi : Optional ndarray, shape (n,)
+        Stationary distribution.  If *None* it is computed internally.
+    base : float, default 2.0
+        Logarithm base.  ``base=2`` → bits; ``np.e`` → nats.
+    """
+    if pi is None:
+        pi = stationary_distribution(P)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        logP = np.log(P) #/ np.log(base)
+        logP[np.isneginf(logP)] = 0.0  # define 0·log0 = 0
+        #h= -np.sum(np.sum(P * logP,axis=1)*pi)
+        h = -(pi[:, None] * P * logP).sum()
+    return float(h)
 
 def reconstruct_Y_from_embedding(embedding_matrix: np.ndarray, K: int, d: int) -> np.ndarray:
     """

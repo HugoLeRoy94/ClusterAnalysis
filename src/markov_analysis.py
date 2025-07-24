@@ -6,6 +6,7 @@ from src.trajectory_utils import (
     time_reversed_transition_matrix,
     count_transitions,
     metastability,
+    entropy_rate,
 )
 from src.embedding_base import EmbeddingBase
 
@@ -31,6 +32,7 @@ class StochasticMatrix:
 
     def compute_spectrum(self) -> None:
         self.val, self.vec = np.linalg.eig(self.P.T)
+        self.val = np.real(self.val)
         idx = np.argsort(self.val)
         self.val = self.val[idx]
         self.vec = self.vec[:, idx]
@@ -45,18 +47,23 @@ class StochasticMatrix:
         self.tr_vec = self.tr_vec[:, idx]
         self.tr_slow_mode = np.real(self.tr_vec[:, -2])
 
-    def compute_metastability(self) -> None:
-        if self.slow_mode is None:
+    def compute_metastability(self,time_reversed = True) -> None:
+        slow_mode= self.slow_mode
+        if time_reversed:
+            slow_mode = self.tr_slow_mode
+        if slow_mode is None:
             raise RuntimeError("Compute spectrum first.")
-        self.thresholds = np.linspace(self.slow_mode.min(), self.slow_mode.max(), 100)
+        self.thresholds = np.linspace(slow_mode.min(), slow_mode.max(), 100)
         meta_in, meta_out = [], []
         for t in self.thresholds:
-            A = np.where(self.slow_mode >= t)[0]
-            B = np.where(self.slow_mode < t)[0]
+            A = np.where(slow_mode >= t)[0]
+            B = np.where(slow_mode < t)[0]
             meta_in.append(metastability(self.P, self.pi, A))
             meta_out.append(metastability(self.P, self.pi, B))
         self.meta_in = np.array(meta_in)
         self.meta_out = np.array(meta_out)
+    def compute_entropy_rate(self) -> float:
+        return entropy_rate(self.P, self.pi)
 
 
 

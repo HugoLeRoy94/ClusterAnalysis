@@ -28,13 +28,14 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from src.io import load_dataframe
 from src.embedding import Embedding
 from src.embedding_position import EmbeddingPosition
+from src.markov_analysis import Markov
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Delay embedding and k-means clustering")
     parser.add_argument("--input", type=str, required=True, help="Path to phase-annotated input file (.csv or .parquet)")
     parser.add_argument("--output-dir", type=str, required=True, help="Directory to save embedding and clustering outputs")
-    parser.add_argument("--columns", type=str, required=True, help="Comma-separated feature columns (e.g. speed,curvature_angle)")
+    parser.add_argument("--columns", type=str, default = None, help="Comma-separated feature columns (e.g. speed,curvature_angle)")
     parser.add_argument("--columns-trans",type=str, default=None,help="output directory for the embedding instance")
     parser.add_argument("--K", type=int, required=True, help="Delay length")
     #parser.add_argument("--tau", type=int, required=True, help="time of the Markov chain")
@@ -45,7 +46,10 @@ def parse_args():
     parser.add_argument("--min-length", type=int, default=20, help="Minimum trajectory length to retain")
     parser.add_argument("--groupby",type=str, default="ID",help="Name of the individual trajectories")
     parser.add_argument("--out-summary",type=str, default="markov_summary.json",help="output directory for the summary")
-    parser.add_argument("--out-embedding",type=str, default="embedding.pkl",help="output directory for the embedding instance")
+    parser.add_argument("--out-embedding",type=str, default="embedding.pkl",help="output directory for the Embedding instance")
+    parser.add_argument("--out-markov",type=str, default="markov.pkl",help="output directory for the Markov instance")
+    parser.add_argument("--n-trajectories", type=int,default=None)
+    parser.add_argument("--n-windows", type=int,default=None)
     return parser.parse_args()
 
 
@@ -61,12 +65,15 @@ def main():
 
 
     # Build embedding object
-    feature_cols = args.columns.split(",")
+    if args.columns is not None:
+        feature_cols = args.columns.split(",")
+    else :
+        feature_cols = []
     if args.columns_trans is None:
-        emb = Embedding(df, columns=feature_cols, ID_NAME=args.groupby)
+        emb = Embedding(df, columns=feature_cols, ID_NAME=args.groupby,n_trajectories=args.n_trajectories,n_windows=args.n_window)
     else :
         feature_cols_trans = args.columns_trans.split(",")
-        emb = EmbeddingPosition(df, columns=feature_cols,columns_translated = feature_cols_trans,ID_NAME=args.groupby)
+        emb = EmbeddingPosition(df, columns=feature_cols,columns_translated = feature_cols_trans,ID_NAME=args.groupby,n_trajectories = args.n_trajectories,n_windows=args.n_windows)
 
     # Construct delay embedding
     emb_matrix, flat_matrix = emb.make_embedding(args.K)
@@ -83,14 +90,16 @@ def main():
     timescales = {}
 
     for tau in tau_values:
-        P = emb.make_transition_matrix(tau=tau)
-        eig_val, eig_vec = np.linalg.eig(P)
-        real_spectrum = np.real(eig_val)
-        real_spectrum = real_spectrum[np.argsort(real_spectrum)][::-1]
-        eig_val_10[tau] = real_spectrum[:10].tolist()
+        #P = emb.make_transition_matrix(tau=tau)
+        mkv = Markov(emb,tau=tau)
+        mkv.compute_spectrum()
+        #eig_val, eig_vec = np.linalg.eig(P)
+        #real_spectrum = np.real(eig_val)
+        #real_spectrum = real_spectrum[np.argsort(real_spectrum)][::-1]
+        eig_val_10[tau] = mkv.val[-10:].tolist()#real_spectrum[:10].tolist()
 
-        h = emb.entropy_rate(P, emb.pi)
-        ts = emb.implied_timescales(P, lag=tau)
+        h = mkv.compute_entropy_rate()
+        ts = mkv.implied_timescales(tau=tau)
 
         entropy_rates[tau] = h
         timescales[tau] = ts.tolist()
@@ -104,12 +113,14 @@ def main():
     with open(out_dir / args.out_summary , "w") as f:
         json.dump(result, f, indent=2)
     
-    print(set(emb.labels).__len__())
     with open(out_dir / args.out_embedding, "wb") as f:
         pickle.dump(emb,f,protocol=pickle.HIGHEST_PROTOCOL)
 
-    print(f"[INFO] Transition matrix P: {P.shape}")
-    print(f"[INFO] Stationary distribution π: {emb.pi.shape}")
+    with open(out_dir / args.out_markov, "wb") as f:
+        pickle.dump(mkv,f,protocol=pickle.HIGHEST_PROTOCOL)
+
+    print(f"[INFO] Transition matrix P: {mkv.P.shape}")
+    print(f"[INFO] Stationary distribution π: {mkv.pi.shape}")
     print(f"[INFO] Entropy rate: {h:.4f} bits")
     print(f"[INFO] Implied timescales: {ts[:5]}")
     print(f"[INFO] Saved to {out_dir}")

@@ -13,9 +13,9 @@ class EmbeddingPosition(EmbeddingBase):
         columns: List[str],              # absolute features (e.g. speed, curvature)
         columns_translated: List[str],   # shifted features (e.g. x, y, z)
         Y: np.ndarray | None = None,
-        Nsamples: int | str = "all",
         ID_NAME: str = "ID",
-        n_subsample: Optional[int] = None
+        n_trajectories: Optional[int] = None,
+        n_windows: Optional[int] = None,
     ) -> None:
         self.columns_translated = columns_translated
         self.ID_NAME = ID_NAME
@@ -24,10 +24,11 @@ class EmbeddingPosition(EmbeddingBase):
             raise NotImplementedError("Only raw DataFrame input is supported in this subclass.")
 
         # Get subset of trajectories
-        if Nsamples == "all":
-            wanted_ids = data[ID_NAME].unique()
+        if n_trajectories is None:
+                wanted_ids = data[ID_NAME].unique()
         else:
-            wanted_ids = data[ID_NAME].unique()[: int(Nsamples)]
+            rng = np.random.default_rng(seed=42)  # or pass the seed as an argument
+            wanted_ids = rng.choice(data[ID_NAME].unique(), size=int(n_trajectories), replace=False)
         subset = data[data[ID_NAME].isin(wanted_ids)]
 
         # Extract both sets of trajectories with same T_min
@@ -43,7 +44,7 @@ class EmbeddingPosition(EmbeddingBase):
         Y_trans = np.stack([traj[:T_min] for traj in trajs_trans])
 
         self.Y_translated = Y_trans
-        super().__init__(data, columns=columns, Y=Y_abs, Nsamples=Nsamples, ID_NAME=ID_NAME, n_subsample=n_subsample)
+        super().__init__(data, columns=columns, Y=Y_abs, ID_NAME=ID_NAME, n_trajectories=n_trajectories,n_windows=n_windows)
         self.D += len(columns_translated)
 
     def make_embedding(self, K: int) -> (np.ndarray, np.ndarray):
