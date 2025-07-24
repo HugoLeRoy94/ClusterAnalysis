@@ -1,0 +1,178 @@
+\documentclass[a4paper,10pt]{article}
+\usepackage[compact]{titlesec}
+\usepackage[hang,flushmargin,stable]{footmisc}
+\usepackage[margin=24mm]{geometry}
+\usepackage[nohyperlinks,nolist]{acronym}
+\usepackage[T1]{fontenc}
+\usepackage[usenames,dvipsnames,table]{xcolor}
+\usepackage[utf8]{inputenc}
+\usepackage{amsfonts,amsmath,amssymb}
+\usepackage{comment}
+\usepackage{tikz}
+\newcommand{\reviewdot}{\raisebox{0.5ex}{\tikz[baseline]{\node[fill=red, circle, inner sep=1.5pt]{};}}}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{csquotes}
+\usepackage{enumitem}
+\usepackage{eurosym}
+\usepackage{fancybox}
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{lastpage}
+\usepackage{lineno}
+\usepackage{lmodern}
+\usepackage{lscape}
+\usepackage{makecell}
+\usepackage{marginnote}
+\usepackage{multirow}
+\usepackage{pgfgantt}
+\usepackage{pgfplots}
+\usepackage{pgfplotstable}
+\usepgfplotslibrary{polar}
+\pgfplotsset{compat=1.12}
+\usepackage{pifont}
+\usepackage{sectsty}
+\usepackage{sidecap}
+\usepackage{soul} % for smarter (word-wrapping) underlining
+\setul{1pt}{.4pt} % 1pt below contents
+\usepackage{wrapfig}
+\usepackage{xspace}
+\usepackage{titlesec}
+\usepackage{listings}
+\usepackage{xcolor}  % optional, for coloring
+
+% Define theme colors
+\definecolor{editorBackground}{HTML}{1B1B1D}
+\definecolor{editorKeyword}{HTML}{C586C0}
+\definecolor{editorComment}{HTML}{6A9955}
+\definecolor{editorString}{HTML}{CE9178}
+\definecolor{editorFunction}{HTML}{DCDCAA}
+\definecolor{editorNumber}{HTML}{B5CEA8}
+\definecolor{editorText}{HTML}{FFFFFF}  % <- white text
+
+\lstset{
+  language=Python,
+  backgroundcolor=\color{editorBackground},
+  basicstyle=\ttfamily\small\color{editorText},
+  keywordstyle=\color{editorKeyword}\bfseries,
+  commentstyle=\color{editorComment}\itshape,
+  stringstyle=\color{editorString},
+  numberstyle=\color{editorNumber},
+  showstringspaces=false,
+  breaklines=true,
+  frame=single
+}
+
+% HotFix from http://tex.stackexchange.com/a/300259/84485
+% Version1 of titlesec is not compatible with the latest texlive. 
+% Either the titlesec package must be updated, or the following HotFix used:
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd{\ttlh@hang}{\parindent\z@}{\parindent\z@\leavevmode}{}{}
+\patchcmd{\ttlh@hang}{\noindent}{}{}{}
+\makeatother
+
+% Fonts
+\usepackage{libertine}
+\usepackage[scaled=.875]{gillius2}
+\usepackage[libertine]{newtxmath}
+
+% Size
+\headheight=14pt
+%\setlength{\parindent}{0pt}
+\titleformat*{\section}{\large}
+\titleformat*{\subsection}{\normalsize}
+\titleformat*{\subsubsection}{\normalsize}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\baselinestretch}{1.0} 
+
+% Color
+\definecolor{royalblue}{rgb}{0.0, 0.14, 0.4}
+\definecolor{customgreen}{rgb}{0.32, 0.49, 0.24}
+%\definecolor{custompurple}{rgb}{0.8, 0.13, 0.505}
+\definecolor{custompurple}{rgb}{0.337, 0.164, 0.517}
+\definecolor{customlightblue}{rgb}{0,0.494,0.58}
+\definecolor{customorange}{rgb}{0.9,0.317,0.074}
+\allsectionsfont{\sffamily\bfseries\raggedright\color{royalblue}}
+\let\oldfootnotesize\footnotesize
+\newcommand{\highlight}[1]{\colorbox{gray!15}{\small{#1}}}
+\newcommand{\marginLeft}[1]{\reversemarginpar\marginnote{\rotatebox{90}{\sffamily\bfseries\color{royalblue}\large{\phantom{j}#1}}}[0.5cm]}
+\newcommand{\marginRight}[1]{\normalmarginpar\hspace{0pt}\marginpar{\rotatebox{0}{\sffamily\color{gray}\normalsize{#1}}}}
+\newcommand\colorrule{\vspace{4px}{\color{lightgray}\hrule}\vspace{4px}}
+
+% Bibliography
+
+%\usepackage[style=chem-acs,doi=false]{biblatex}
+
+
+% Explicitly set footnote font size to match call (i.e., 8pt).
+% Taken from http://tex.stackexchange.com/a/249422/84485
+\makeatletter
+\renewcommand\footnotesize{%
+   \@setfontsize\footnotesize\@ixpt{8}%
+   \abovedisplayskip 8\p@ \@plus2\p@ \@minus4\p@
+   \abovedisplayshortskip \z@ \@plus\p@
+   \belowdisplayshortskip 4\p@ \@plus2\p@ \@minus2\p@
+   \def\@listi{\leftmargin\leftmargini
+               \topsep 4\p@ \@plus2\p@ \@minus2\p@
+               \parsep 2\p@ \@plus\p@ \@minus\p@
+               \itemsep \parsep}%
+   \belowdisplayskip \abovedisplayskip
+}
+\makeatother
+
+\hypersetup{
+    pdftitle={SNSF-BETASYN-2024},    % title
+    pdfauthor={Le Roy Hugo},
+    colorlinks=true,
+    citecolor=black,
+    linkcolor=black,
+    urlcolor=blue
+  }
+
+% To correctly align fancy headers.
+% Courtesy of: http://tex.stackexchange.com/a/88136/84485
+\makeatletter
+\newcommand{\resetHeadWidth}{\f@nch@setoffs}
+\makeatother
+
+% Headers and Footers - specify Abrr and ProjectCode
+\pagestyle{fancy}
+\fancyhead{}
+\fancyfoot{}
+\fancyhead[C]{\small \color{gray}{\sffamily Extracting behavioral stereotypes through analysis of trajectory data}}
+\fancyfoot[L]{\small \color{gray}{\sffamily Project Report}}
+\fancyfoot[R]{\small \color{gray}{\sffamily \thepage~of \pageref*{sec:textend}}}
+\resetHeadWidth
+
+\usepackage{comment}
+\usepackage{csquotes}
+%\usepackage[style=authortitle,backend=bibtex,doi=false]{biblatex
+% Headers and Footers
+\renewcommand{\footnotesize}{\fontsize{8bp}{1em}\selectfont}
+%\renewcommand{\cite}{\autocite} % citations in footnotes
+
+\title{Research Project \\ \rule{\textwidth}{0.5pt} Extracting behavioral stereotypes through analysis of trajectory data}
+\author{Hugo Le Roy}
+\date{}
+
+
+\begin{document}
+\maketitle
+\begin{abstract}
+
+\end{abstract}
+\input{Intro}
+%\input{Section1}
+%\input{Section2}
+%\input{Section3}
+%\input{Section4}
+
+\clearpage
+\pagestyle{empty}
+\bibliographystyle{unsrt}
+%\bibliography{alpha-synopathy,viscoelasticity_of_condensates,SNSF_Mobility,2024CNRS}
+\label{sec:textend}
+\end{document}

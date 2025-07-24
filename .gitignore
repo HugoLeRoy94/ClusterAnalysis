@@ -8,3 +8,5 @@ __pycache__/
 *.out
 *.gz
 *.svg
+*.npy
+*.pkl
