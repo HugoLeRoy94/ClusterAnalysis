@@ -218,4 +218,23 @@ def canonicalize_trajectory(coords, *, return_rotation=False, tol=1e-12):
         Y[:, 2] *= -1
 
     canon = Y                               # 5
+    # Step 6: chiral disambiguation via lexicographic minimization
+    mirrors = np.array([
+        [ 1,  1,  1],
+        [-1,  1,  1],
+        [ 1, -1,  1],
+        [ 1,  1, -1],
+        [-1, -1,  1],
+        [-1,  1, -1],
+        [ 1, -1, -1],
+        [-1, -1, -1]
+    ])  # shape (8, 3)
+
+    mirrored = np.einsum('ij,kj->kij', canon, mirrors)  # shape (8, K, 3)
+
+    flat = mirrored.reshape(8, -1)  # shape (8, 3K)
+    best_index = np.lexsort(flat.T)[0]
+    canon = mirrored[best_index]
+
+
     return (canon, V) if return_rotation else canon
