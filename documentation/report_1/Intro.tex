@@ -1,24 +1,30 @@
 \section{Introduction}
 
--> Here, we describe a data-driven procedure to extract stereotypical behavior from animal trajectories.
--> The assumption underlying this procedure is that we use animal centric measurements of the trajectories that reflects the "inner state" of the animal.
--> 
--> However, the state of an animal, and the associated change is not 
+Animal behavior can manifest through a range of observable features, from social interactions and body posture to spatial trajectories. In this work, we concentrate on the analysis of animal trajectories and explore their connection to underlying goals or strategies. Our approach is grounded in the hypothesis that such trajectories are composed of stereotypical behavioral motifs that are largely independent of specific contextual factors. For instance, a human may walk, run, or crouch regardless of the precise task at hand—these movements reflect biomechanical constraints more than cognitive deliberation. As such, the execution of these behaviors is typically subconscious and goal-agnostic. However, identifying such stereotypical patterns often involves anthropocentric biases and subjective labeling. To circumvent this, we propose a fully data-driven method for segmenting trajectories into recurring, meaningful behavioral "words."
+
+Our approach draws inspiration from the work of \cite{costaMarkovianDynamicsCaenorhabditis2024} on C. elegans, where delayed embedding and clustering were applied to sequences of body postures to identify stereotyped behavior. This method builds on Taken's embedding theorem, which asserts that the state of a dynamical system can be reconstructed from partial observations, preserving properties like Lyapunov exponents or fractal dimensions. In their case, posture sequences were treated as proxies for the worm's internal neuronal state, which is not directly accessible. Here, we extend this framework by applying delayed embedding not to posture, but to the spatial trajectory of the animal's center of mass. This assumes that short trajectory segments contain sufficient information to characterize behavioral state. To support this assumption, we adapt the standard embedding procedure to express positional data (x,y,z)(x,y,z) in an animal-centric reference frame. While natural features such as velocity, curvature, and torsion would be ideal, their reliance on differentiation makes them highly sensitive to noise. Instead, we introduce an alternative representation that captures the same geometric information without requiring explicit derivatives.
+
 
 \section{Mathematical framework}
-
 \subsection{Preprocessing}
--> We use input trajectories : $Y_\text{in}$ that contains $N_\text{in}$ sample of inhomogeneous trajectories length, in $d$ dimensions, with equal timesteps $\Delta t$.
--> The first step is a smoothing of the  trajectories using a Savitzky-Golay filter, a window of 7 time steps, and a polynome of order 3.
--> Next, we convert these trajectories into homogeneous length. We select a total time $T$, discard trajectories that have a time smaller than $T$, whereas longer trajectories are cut into one or several trajectories of length $T$.
--> At this point, $Y$ is a \texttt{numpy.ndarray} of dimension $N \times Y \times d$ of $(x,y,z)$ positions.
--> We then convert the  $\mathbf{X}(t) = (x(t), y(t), z(t))$: positions into parameters t hat are independant of the reference frame, namely : velocity: $||\textbf{v}||$, rotation velocity $\dot{\theta}$, and torsion velocity $\dot{\phi}$, defined as:
-\begin{wrapfigure}[15]{r}{0.35\textwidth} % 'l' for left and '0.5\textwidth' for the width of the figure box
+\begin{wrapfigure}[14]{r}{0.35\textwidth} % 'l' for left and '0.5\textwidth' for the width of the figure box
   \centering
   \includegraphics[width=0.3\textwidth]{trajectory_length.pdf} % Width less than the wrapfigure width to ensure padding
   \caption{Distribution of trajectory length, we use $T = 1000$.}
   \label{fig:phase_diagram}
 \end{wrapfigure}
+
+We begin with a set of input trajectories denoted $Y_{\text{in}} = \{Y^i\}_{i < N_{\text{in}}}$, where each $Y^i$ is a trajectory in $d = 3$ dimensions, sampled at uniform time intervals $\delta t$. These trajectories are of variable lengths. As a preprocessing step, we apply a Savitzky-Golay filter with a window of 7 time steps and a polynomial of order 3 to smooth each trajectory and reduce high-frequency noise. To standardize the data, we then convert all trajectories to a fixed temporal length $T$: trajectories shorter than $T$ are discarded, while those longer than $T$ are segmented into one or more sub-trajectories of length $T$. The resulting dataset $Y = \{ Y_T^i \}_{i\in[1,N]}$ is a NumPy array of shape $N \times T \times d$ containing $N$ smoothed and temporally aligned trajectories $Y_T^i = [x^i(t), y^i(t), z^i(t)]_{i\in[1,T]}$ positions.
+
+
+
+%-> We use input trajectories : $Y_\text{in} = \{Y^i\}_{i<N_\text{in}}$ that contains $N_\text{in}$ sample of inhomogeneous trajectories length, in $d = 3$ dimensions, with equal timesteps $\delta t$.
+%-> The first step is a smoothing of the  trajectories using a Savitzky-Golay filter, a window of 7 time steps, and a polynome of order 3.
+%-> Next, we convert these trajectories into homogeneous length. We select a total time $T$, discard trajectories that have a time smaller than $T$, whereas longer trajectories are cut into one or several trajectories of length $T$.
+%-> At this point, $Y$ is a \texttt{numpy.ndarray} of dimension $N \times T \times d$ of $(x,y,z)$ positions.
+
+%-> We then convert the  $\mathbf{X}(t) = (x(t), y(t), z(t))$: positions into parameters t hat are independant of the reference frame, namely : velocity: $||\textbf{v}||$, rotation velocity $\dot{\theta}$, and torsion velocity $\dot{\phi}$, defined as:
+\begin{comment}
 \subsubsection*{velocity $|\textbf{v}|$}
 \begin{equation}
 |\mathbf{v}_i| = \frac{1}{2} \left( \left\| \frac{\mathbf{X}_{i+1} - \mathbf{X}_i}{\Delta t} \right\| + \left\| \frac{\mathbf{X}_{i+2} - \mathbf{X}_{i+1}}{\Delta t} \right\| \right)
@@ -52,11 +58,61 @@ Then define torsion rate as:
 \end{equation}
 
 In the following, we use the vector $\textbf{Y} = \left\{ \left[v_t^i,\dot{\theta}_t^i, \dot{\psi}_t^i \right]_{t\in [0,T]}\right\}_i$ where $i$ refeers to the trajectory number, and $t$ the time point.
+\end{comment}
+
+\subsection{Disambiguation of Trajectories via PCA and Lexicographic Disambiguation}
+\label{sec:disambiguation}
+To compare short segments of trajectories of length $K$ ($Y_K = \{x(t),y(t),z(t)\}_{t\in[0,K]}$) independently of the animal's orientation or spatial location, we introduce a canonicalization procedure that maps each trajectory into a unique, intrinsic reference frame. This ensures that two trajectory segments that are equivalent up to a rigid-body transformation—translation, rotation, or mirror reflection—are mapped to the same canonical representation.
+
+Let $\mathbf{X} \in \mathbb{R}^{K \times 3}$ denote a trajectory of $K$ consecutive points in 3D. The canonicalization consists of the following steps:
+
+\paragraph{1. Centering.} We subtract the centroid of the trajectory so that
+\[
+\mathbf{C} = \mathbf{X} - \bar{\mathbf{x}}, \quad \text{with} \quad \bar{\mathbf{x}} = \frac{1}{K} \sum_{i=1}^{K} \mathbf{X}_i.
+\]
+
+\paragraph{2. Rotation to a Canonical Frame.} We perform singular value decomposition (SVD) of $\mathbf{C}$:
+\[
+\mathbf{C} = \mathbf{U} \boldsymbol{\Sigma} \mathbf{V}^\top,
+\]
+where $\mathbf{V} \in \mathbb{R}^{3 \times 3}$ contains the right singular vectors (principal axes). The canonical frame is given by rotating $\mathbf{C}$ via:
+\[
+\mathbf{Y} = \mathbf{C} \mathbf{V}.
+\]
+This aligns the trajectory with its principal components, making the representation invariant to arbitrary 3D rotation.
+
+\paragraph{3. Sign Disambiguation.} The direction of each axis is resolved by maximizing the third central moment:
+\[
+m_3 = \sum_{i=1}^{K} Y_{ij}^3.
+\]
+If $|m_3| < \epsilon$, we use the mixed third-order moment $\sum Y_{ij}^2 Y_{ik}$ for $k \neq j$ instead. Axes with negative $m_3$ are flipped to ensure consistent orientation.
+
+\paragraph{4. Enforcing a Right-Handed Basis.} To remove ambiguity from improper rotations, we adjust the final axis so that $\det(\mathbf{V}) = +1$.
+
+\paragraph{5. Chiral Symmetry Disambiguation.} The previous steps guarantee invariance to rigid-body transformations but not to mirror symmetry. To resolve this, we consider the 8 possible reflections across the coordinate axes:
+\[
+\mathcal{M} = \{ \text{diag}(\epsilon_1, \epsilon_2, \epsilon_3) \mid \epsilon_i \in \{-1, 1\} \}.
+\]
+Each mirrored trajectory is flattened into a vector in $\mathbb{R}^{3K}$, and we select the lexicographically minimal one:
+\[
+\mathbf{Y}_{\text{canon}} = \arg\min_{\mathbf{M} \in \mathcal{M}} \mathrm{vec}(\mathbf{Y} \mathbf{M}).
+\]
+This ensures a unique representation even for trajectories that differ only by chirality.
+
+\paragraph{6. Illustration.} In Figure~\ref{fig:helix_canonicalization}, we demonstrate the procedure on two helical trajectories that are mirror images of one another. On the left, the helices are shown in their original coordinate systems. On the right, we plot the canonicalized versions; both trajectories are mapped to the same curve, confirming invariance under translation, rotation, and reflection.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{helix_disambiguation.pdf}
+    \caption{Disambiguation of two helices differing by a rigid-body transformation and mirror symmetry. Left: original trajectories. Right: canonicalized versions showing full overlap.}
+    \label{fig:helix_canonicalization}
+\end{figure}
 
 \subsection{Embedding}
+From the input data $\textbf{Y} = \{Y_N^i\}_i = $, and for each individual trajectory, we build a delayed embedding matrix where each line is a time delayed portion of trajectory of size $K$. 
+Formally, for a given sample $i$, we got: 
 
-From the input data $\textbf{Y}$, and for each individual trajectory, we build a delayed embedding matrix where each line is a time delayed portion of trajectory of size $K$. Formally, for a given trajectory $i$, we got: 
-
+\begin{comment}
 \begin{equation}
 \mathbf{Y}_{K}^i =
 \left[
@@ -75,6 +131,7 @@ y_1(T{-}K{+}1) & y_2(T{-}K{+}1) & \cdots & y_d(T{-}K{+}1) & \cdots & y_1(T) & \c
 \begin{equation*}
 \underbrace{\hspace{12cm}}_{K \cdot d \text{ columns}}
 \end{equation*}
+\end{comment}
 
 Applied to our system, we obtain the following embedding matrix :
 
@@ -82,10 +139,10 @@ Applied to our system, we obtain the following embedding matrix :
 \mathbf{Y}_{K}^i =
 \left[
 \begin{array}{cccccccc}
-v_1^i & \dot{\theta}_1^i & \dot{\psi}_1^i & \cdots & v_K^i & \dot{\theta}_K^i & \dot{\psi}_K^i \\
-v_2^i & \dot{\theta}_2^i & \dot{\psi}_2^i & \cdots & v_{K+1}^i & \dot{\theta}_{K+1}^i & \dot{\psi}_{K+1}^i \\
+x_1^i & y_1^i & z_1^i & \cdots & x_K^i & y_K^i & z_K^i \\
+x_2^i & y_2^i & z_2^i & \cdots & v_{K+1}^i & y_{K+1}^i & z_{K+1}^i \\
 \vdots & \vdots & \vdots &        & \vdots & \vdots & \vdots \\
-v_{T-K+1}^i & \dot{\theta}_{T-K+1}^i & \dot{\psi}_{T-K+1}^i & \cdots & v_T^i & \dot{\theta}_T^i & \dot{\psi}_T^i \\
+x_{T-K+1}^i & y_{T-K+1}^i & z_{T-K+1}^i & \cdots & x_T^i & y_T^i & z_T^i \\
 \end{array}
 \right]
 \quad
@@ -108,6 +165,7 @@ Y_K^i(T-K+1)
 \end{equation}
 
 $Y_K^i$ can be interpreted as a trajectory vector where each data point fits in a space of dimension $3K$.
+
 
 \subsection{Clustering}
 
