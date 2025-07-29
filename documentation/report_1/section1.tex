@@ -1,0 +1,148 @@
+\section{Mathematical Framework}
+\subsection{Preprocessing}
+
+We begin with a set of input trajectories denoted $\mathbf{Y}_{\text{in}} = \{\mathbf{Y}^i\}_{i < N_{\text{in}}}$, where each $\mathbf{Y}^i$ is a trajectory in $d = 3$ dimensions, sampled at uniform time intervals $\delta t$. These trajectories are of variable lengths. As a preprocessing step, we apply a Savitzky-Golay filter with a window of 7 time steps and a polynomial of order 3 to smooth each trajectory and reduce high-frequency noise. To standardize the data, we then convert all trajectories to a fixed temporal length $T$: trajectories shorter than $T$ are discarded, while those longer than $T$ are segmented into one or more sub-trajectories of length $T$. The resulting dataset $\mathbf{Y} = \{ \mathbf{Y}^i \}_{i\in[1,N]}$ is a NumPy array of shape $N \times T \times d$ containing $N$ smoothed and temporally aligned trajectories $\mathbf{Y}^i = [x^i(t), y^i(t), z^i(t)]_{i\in[1,T]}$ positions.
+
+\subsection{Regularization Operator via PCA and Lexicographic Disambiguation}
+\label{sec:disambiguation}
+To compare short segments of trajectories of length $K$ ($\mathbf{Y} = [x(t),y(t),z(t)]_{t\in[0,K]}$) independently of the animal's orientation or spatial location, we introduce a regularization operator $\mathcal{R}$ that maps each trajectory into a unique, intrinsic reference frame. This ensures that two trajectory segments that are equivalent up to a rigid-body transformation—translation, rotation, or mirror reflection—are mapped to the same canonical representation.
+
+\begin{wrapfigure}[16]{r}{0.35\textwidth} % 'l' for left and '0.5\textwidth' for the width of the figure box
+  \centering
+  \includegraphics[width=0.3\textwidth]{trajectory_length.pdf} % Width less than the wrapfigure width to ensure padding
+  \caption{Distribution of trajectory length, we use $T = 1000$.}
+  \label{fig:phase_diagram}
+\end{wrapfigure}
+
+Let $\mathbf{Y}_0 = [x_0(t),y_0(t),z_0(t)]_{t\in[0,K]} \in \mathbb{R}^{K \times 3}$ denote a trajectory of $K$ consecutive points in 3D. The regularization consists of the following steps:
+
+\paragraph{1. Centering.} We subtract the centroid of the trajectory so that
+\[
+\mathbf{Y}_1 = \mathbf{Y}_0 - \bar{\mathbf{Y}_0}, \quad \text{with} \quad \bar{\mathbf{Y}_0} = \frac{1}{K} \sum_{i=1}^{K} [x_0(i),y_0(i),z_0(i)].
+\]
+
+\paragraph{2. Rotation to a Canonical Frame.} We perform singular value decomposition (SVD) of $\mathbf{\tilde{Y}}$:
+\[
+\mathbf{Y}_1 = \mathbf{U} \boldsymbol{\Sigma} \mathbf{V}^\top,
+\]
+where $\mathbf{V} \in \mathbb{R}^{3 \times 3}$ contains the right singular vectors (principal axes). The canonical frame is given by rotating $\mathbf{C}$ via:
+\[
+\mathbf{Y}_2 = \mathbf{Y}_1 \mathbf{V}.
+\]
+This aligns the trajectory with its principal components, making the representation invariant to arbitrary 3D rotation.
+
+\paragraph{3. Sign Disambiguation.}  
+Although the principal axes provided by $\mathbf{V}$ define an orientation of the canonical frame, their directions are still ambiguous: multiplying any column of $\mathbf{V}$ by $-1$ leaves the orthonormal basis valid. To resolve this sign ambiguity, we analyze the asymmetry of the trajectory along each principal axis using higher-order moments.
+
+We define the \emph{third central moment} of the projected trajectory $\mathbf{Y}_2 = \mathbf{Y}_1 \mathbf{V}$ along axis $x,y,z$ as:%$j \in \{1,2,3\}$ as:
+\[
+M_3 = [m_3^x,m_3^y,m_3^z]  = \sum_{t=1}^{K} \left[ x_2(t)^3, y_2(t)^3, z_2(t)^3\right],
+\]
+This moment captures the skewness of the distribution of points along the axis: it is positive if the distribution is biased toward positive values, negative if biased toward negative ones. We flip the sign of axis $\alpha$ (i.e., multiply $\mathbf{V}_{:,\alpha}$ and $\mathbf{Y}_2[:,\alpha]$ by $-1$) if $m_3^{\alpha} < 0$, ensuring a consistent "forward" direction.
+
+However, in cases where the trajectory is nearly symmetric along axis $\alpha$ and $|m_3^{\alpha}| < \epsilon$, the sign is ambiguous. We then resort to a \emph{mixed third-order moment} involving axis $\beta = (\alpha + 1) \bmod 3$:
+\[
+\tilde{M}_3 = [\tilde{m}_3^{(x,y)},\tilde{m}_3^{(y,z)},\tilde{m}_3^{(z,x)}] = \sum_{t=1}^{K} [x_2^2 y_2, y_2^2 z_2, z_2^2 x_2]%\left(Y_2(t,j)\right)^2 Y_2(t,k),
+\]
+which captures correlated asymmetry between axes. Again, if $\tilde{m}_3^{(\alpha,\beta)} < 0$, we flip axis $\alpha$. This rule allows sign disambiguation even when individual axes are symmetric, by leveraging geometric correlations between coordinates.
+
+\paragraph{4. Enforcing a Right-Handed Basis.} 
+The matrix $\mathbf{V} \in \mathbb{R}^{3 \times 3}$ obtained from the singular value decomposition defines an orthonormal basis for the rotated trajectory. However, this basis may correspond to either a proper or an improper rotation. Proper rotations preserve orientation (right-handedness) and have determinant $\det(\mathbf{V}) = +1$, while improper rotations include a reflection and satisfy $\det(\mathbf{V}) = -1$.
+
+To enforce a consistent, right-handed coordinate system, we check the determinant of $\mathbf{V}$. If $\det(\mathbf{V}) < 0$, we flip the sign of the third axis:
+\[
+\mathbf{V}_{:,3} \leftarrow -\mathbf{V}_{:,3}, \quad \mathbf{Y}_2[:,3] \leftarrow -\mathbf{Y}_2[:,3].
+\]
+This ensures that the transformation aligns the trajectory with a proper rotation and removes ambiguity due to orientation inversion.
+
+\paragraph{5. Chiral Symmetry Disambiguation.} 
+After centering and aligning the trajectory using PCA, two mirror-image trajectories (i.e., enantiomers) will still appear different in this canonical frame, even though they are behaviorally equivalent. To remove this ambiguity, we apply all 8 possible reflections across the coordinate axes to the aligned trajectory $\mathbf{Y}_2 \in \mathbb{R}^{K \times 3}$.
+
+Let $\mathcal{M} = \{ \text{diag}(\epsilon_1, \epsilon_2, \epsilon_3) \mid \epsilon_i \in \{-1, 1\} \}$ denote the set of $8$ diagonal matrices representing reflections across each axis. For each reflection matrix $\mathbf{M} \in \mathcal{M}$, we compute the reflected trajectory $\mathbf{Y}_2 \mathbf{M}$.
+
+To select a unique canonical representative among all mirrored versions, we flatten each trajectory matrix into a one-dimensional vector using the row-major vectorization operator $\mathrm{vec}$. Specifically, if $\mathbf{A} \in \mathbb{R}^{K \times 3}$ is a matrix, then
+\[
+\mathrm{vec}(\mathbf{A}) = \begin{bmatrix}
+A_{1,1}, & A_{1,2}, & A_{1,3}, & A_{2,1}, & A_{2,2}, & A_{2,3}, & \cdots, & A_{K,3}
+\end{bmatrix}^\top \in \mathbb{R}^{3K}.
+\]
+We then select the lexicographically smallest vector among all 8 mirrored versions:
+\[
+\mathbf{Y}_{3} = \arg\min_{\mathbf{M} \in \mathcal{M}} \mathrm{vec}(\mathbf{Y}_2 \mathbf{M}).
+\]
+This guarantees a unique, consistent output even for trajectories that are mirror images of each other. All these operations are summarized in a unique operator:
+\[
+\mathcal{R}\left[\mathbf{Y}_0\right] = \mathbf{Y}_3
+\]
+
+
+\paragraph{6. Illustration.}In Figure~\ref{fig:helix_canonicalization}, we demonstrate the procedure on two helical trajectories that are mirror images of one another. On the left, the helices are shown in their original coordinate systems. On the right, we plot the canonicalized versions; both trajectories are mapped to the same curve, confirming invariance under translation, rotation, and reflection.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{helix_disambiguation.pdf}
+    \caption{Disambiguation of two helices differing by a rigid-body transformation and mirror symmetry. Left: original trajectories. Right: canonicalized versions showing full overlap.}
+    \label{fig:helix_canonicalization}
+\end{figure}
+
+\subsection{Embedding}
+From the input data $\textbf{Y} = \{Y_T^i\}_{i\in[1,N]} $, and for each individual trajectory, we build a delayed embedding matrix where each line is a time delayed portion of trajectory of size $K$ that has been individually regularized. 
+Formally, for a given sample $i$, we got: 
+
+Applied to our system, we obtain the following embedding matrix :
+
+\begin{samepage}
+\begin{equation}
+\mathbf{Y}_{K}^i =
+\left[
+\begin{array}{cccccccc}
+\mathcal{R} \left[x_1^i \right. & y_1^i & z_1^i & \cdots & x_K^i & y_K^i & \left. z_K^i \right]\\
+\mathcal{R} \left[x_2^i\right. & y_2^i & z_2^i & \cdots & v_{K+1}^i & y_{K+1}^i &\left. z_{K+1}^i \right]\\
+\vdots & \vdots & \vdots &        & \vdots & \vdots & \vdots \\
+\mathcal{R} \left[x_{T-K+1}^i \right. & y_{T-K+1}^i & z_{T-K+1}^i & \cdots & x_T^i & y_T^i & \left. z_T^i \right]\\
+\end{array}
+\right]
+\quad
+=
+\left[
+\begin{array}{c}
+Y_K^i(1) \\
+Y_K^i(2) \\
+\vdots \\
+Y_K^i(T-K+1)
+\end{array}
+\right]
+\quad
+\begin{array}{l}
+\left. \rule{0pt}{3.5em} \right\} T{-}K{+}1 \text{ rows}
+\end{array}
+\end{equation}
+\begin{equation}
+\hspace{-6cm}
+\underbrace{\hspace{8cm}}_{3K \text{ columns}}
+\end{equation}
+\end{samepage}
+
+$Y_K^i$ can be interpreted as a trajectory vector where each data point fits in a space of dimension $3K$.
+
+
+\subsection{Clustering}
+
+To analyze the high-dimensional trajectory segments, we begin by clustering the rows of the embedding matrix as individual vectors \(  Y_K^i(t) \) into \( N_c \) clusters using the \( k \)-means algorithm. We call these clusters states \( \{s_i\}_{i\in[0,N_c]} \) and use them to define a Markov model, capturing the dynamical behavior of the animal. For each trajectory, we estimate the transition dynamics between states by constructing a finite-dimensional approximation of the Perron–Frobenius operator via Ulam–Galerkin discretization. Specifically, for a chosen lag time \( \tau \), we define the count matrix \( C_{ij}(\tau) \) as
+\[
+C_{ij}(\tau) = \sum_{t=0}^{T-K+1 - \tau} \zeta_i(Y_{K}^i(t)) \, \zeta_j(Y_{K}^i(t + \tau)),
+\]
+where \( \zeta_i(x) \) is the indicator function of cluster \( s_i \), i.e.,
+\[
+\zeta_i(x) =
+\begin{cases}
+1, & \text{if } x \in s_i, \\
+0, & \text{otherwise}.
+\end{cases}
+\]
+This count matrix is then row-normalized to yield the transition probability matrix \( P_{ij}(\tau) \):
+\[
+P_{ij}(\tau) = \frac{C_{ij}(\tau)}{\sum_j C_{ij}(\tau)},
+\]
+providing a discrete-time Markov approximation of the dynamics over time scale \( \tau \). The overall construction depends on three free parameters: the delay embedding length \( K \), the number of clusters \( N_c \), and the transition lag \( \tau \). In section~\ref{sec:optimization}, we propose a strategy to optimize these parameters jointly.
+\subsection{Coarse Graining of the Markov Dynamic}

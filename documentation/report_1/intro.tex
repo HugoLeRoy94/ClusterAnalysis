@@ -1,0 +1,14 @@
+\section{Introduction}
+
+Animal behavior can manifest through a range of observable features, from social interactions and body posture to spatial trajectories. In this work, we concentrate on the analysis of animal trajectories and explore their connection to underlying goals or strategies. Our approach is grounded in the hypothesis that such trajectories are composed of stereotypical behavioral motifs that are largely independent of specific contextual factors. For instance, a human may walk, run, or crouch regardless of the precise task at hand—these movements reflect biomechanical constraints more than cognitive deliberation. As such, the execution of these behaviors is typically subconscious and goal-agnostic. However, identifying such stereotypical patterns often involves anthropocentric biases and subjective labeling. To circumvent this, we propose a fully data-driven method for segmenting trajectories into recurring, meaningful behavioral "words."
+
+Our approach draws inspiration from the work of \cite{costaMarkovianDynamicsCaenorhabditis2024} on C. elegans, where delayed embedding and clustering were applied to sequences of body postures to identify stereotyped behavior. This method builds on Taken's embedding theorem, which asserts that the state of a dynamical system can be reconstructed from partial observations, preserving properties like Lyapunov exponents or fractal dimensions. In their case, posture sequences were treated as proxies for the worm's internal neuronal state, which is not directly accessible. Here, we extend this framework by applying delayed embedding not to posture, but to the spatial trajectory of the animal's center of mass. This assumes that short trajectory segments contain sufficient information to characterize behavioral state. To support this assumption, we adapt the standard embedding procedure to express positional data (x,y,z) in an animal-centric reference frame. While natural features such as velocity, curvature, and torsion would be ideal, their reliance on differentiation makes them highly sensitive to noise. Instead, we introduce an alternative representation that captures the same geometric information without requiring explicit derivatives.
+
+
+
+
+
+
+
+
+
