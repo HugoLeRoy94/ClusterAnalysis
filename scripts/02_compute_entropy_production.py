@@ -29,8 +29,10 @@ from src.markov_analysis import *
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Scan entropy production over (K, n_clusters)")
-    parser.add_argument("--input", type=str, required=True)
-    parser.add_argument("--output-file", type=str, required=True)
+    parser.add_argument("--input-path", type=str, required=True, help="Path to the directory containing the input file.")
+    parser.add_argument("--input-name", type=str, required=True, help="Name of the input file (without extension).")
+    parser.add_argument("--output-path", type=str, required=True, help="Path to save the output file.")
+    parser.add_argument("--extension", type=str, default="parquet", help="Extension of the input file (default: parquet).")
     parser.add_argument("--columns", type=str, default = None)
     parser.add_argument("--columns-trans",type=str, default=None,help="output directory for the embedding instance")
     parser.add_argument("--K-values", type=str, required=True,
@@ -47,10 +49,13 @@ def parse_args():
 
 def main():
     args = parse_args()
-    out_file = Path(args.output_file)
-    #out_dir.mkdir(parents=True, exist_ok=True)
 
-    df = load_dataframe(args.input)
+    # Construct input and output file paths
+    input_file = Path(args.input_path) / f"{args.input_name}.{args.extension}"
+    output_file = Path(args.output_path) / f"entropy_scan_{args.input_name}.csv"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    df = load_dataframe(input_file)
     if args.columns is not None:
         feature_cols = args.columns.split(",")
     else :
@@ -89,9 +94,8 @@ def main():
             })
 
     df_result = pd.DataFrame(results)
-    output_path = out_file
-    df_result.to_csv(output_path, index=False)
-    print(f"[INFO] Results saved to {output_path}")
+    df_result.to_csv(output_file, index=False)
+    print(f"[INFO] Results saved to {output_file}")
 
 
 if __name__ == "__main__":

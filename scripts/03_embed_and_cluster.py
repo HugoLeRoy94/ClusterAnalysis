@@ -33,8 +33,10 @@ from src.markov_analysis import Markov
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Delay embedding and k-means clustering")
-    parser.add_argument("--input", type=str, required=True, help="Path to phase-annotated input file (.csv or .parquet)")
-    parser.add_argument("--output-dir", type=str, required=True, help="Directory to save embedding and clustering outputs")
+    parser.add_argument("--input-path", type=str, required=True, help="Path to the directory containing the input file.")
+    parser.add_argument("--input-name", type=str, required=True, help="Name of the input file (without extension).")
+    parser.add_argument("--output-path", type=str, required=True, help="Directory to save embedding and clustering outputs")
+    parser.add_argument("--extension", type=str, default="parquet", help="Extension of the input file (default: parquet).")
     parser.add_argument("--columns", type=str, default = None, help="Comma-separated feature columns (e.g. speed,curvature_angle)")
     parser.add_argument("--columns-trans",type=str, default=None,help="output directory for the embedding instance")
     parser.add_argument("--K", type=int, required=True, help="Delay length")
@@ -45,9 +47,6 @@ def parse_args():
     parser.add_argument("--random-state", type=int, default=0, help="Random seed for k-means")
     parser.add_argument("--min-length", type=int, default=20, help="Minimum trajectory length to retain")
     parser.add_argument("--groupby",type=str, default="ID",help="Name of the individual trajectories")
-    parser.add_argument("--out-summary",type=str, default="markov_summary.json",help="output directory for the summary")
-    parser.add_argument("--out-embedding",type=str, default="embedding.pkl",help="output directory for the Embedding instance")
-    parser.add_argument("--out-markov",type=str, default="markov.pkl",help="output directory for the Markov instance")
     parser.add_argument("--n-trajectories", type=int,default=None)
     parser.add_argument("--n-windows", type=int,default=None)
     return parser.parse_args()
@@ -55,13 +54,20 @@ def parse_args():
 
 def main():
     args = parse_args()
-    out_dir = Path(args.output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Construct input and output file paths
+    input_file = Path(args.input_path) / f"phases_{args.input_name}.{args.extension}"
+    output_path = Path(args.output_path)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    summary_file = output_path / f"markov_summary_{args.input_name}.json"
+    embedding_file = output_path / f"embedding_{args.input_name}.pkl"
+    markov_file = output_path / f"markov_{args.input_name}.pkl"
 
     tau_values = list(map(int, args.tau_values.split(",")))
 
     # Load the phase data
-    df = pd.read_parquet(args.input)
+    df = pd.read_parquet(input_file)
 
 
     # Build embedding object
@@ -110,20 +116,20 @@ def main():
         "spectrum_tau": eig_val_10
     }
 
-    with open(out_dir / args.out_summary , "w") as f:
+    with open(summary_file, "w") as f:
         json.dump(result, f, indent=2)
     
-    with open(out_dir / args.out_embedding, "wb") as f:
+    with open(embedding_file, "wb") as f:
         pickle.dump(emb,f,protocol=pickle.HIGHEST_PROTOCOL)
 
-    with open(out_dir / args.out_markov, "wb") as f:
+    with open(markov_file, "wb") as f:
         pickle.dump(mkv,f,protocol=pickle.HIGHEST_PROTOCOL)
 
     print(f"[INFO] Transition matrix P: {mkv.P.shape}")
     print(f"[INFO] Stationary distribution π: {mkv.pi.shape}")
     print(f"[INFO] Entropy rate: {h:.4f} bits")
     print(f"[INFO] Implied timescales: {ts[:5]}")
-    print(f"[INFO] Saved to {out_dir}")
+    print(f"[INFO] Saved to {output_path}")
 
 
 if __name__ == "__main__":

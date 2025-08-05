@@ -13,6 +13,7 @@ from scipy.spatial.distance import squareform
 from src.distance import compute_condensed_distance_matrix
 from scipy.spatial.distance import cdist
 
+
 import umap
 
 __all__ = ["EmbeddingBase"]
@@ -157,7 +158,6 @@ class EmbeddingBase:
             labels_subsample = km.fit_predict(subset)
             self.cluster_centers_ = km.cluster_centers_
             # Predict labels for the entire dataset
-            from scipy.spatial.distance import cdist
             distances = cdist(self.flatten_embedding_matrix, self.cluster_centers_)
             self.labels = np.argmin(distances, axis=1)
 

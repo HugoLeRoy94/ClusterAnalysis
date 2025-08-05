@@ -28,8 +28,10 @@ from umap import UMAP
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Compute 2D UMAP from embedding matrix")
-    parser.add_argument("--input", type=str, required=True, help="Path to embedding.pkl and markov.pkl")
-    parser.add_argument("--output", type=str, required=True, help="Path to save UMAP coordinates (.npy)")
+    parser.add_argument("--input-path", type=str, required=True, help="Path to the directory containing the input file.")
+    parser.add_argument("--input-name", type=str, required=True, help="Name of the input file (without extension).")
+    parser.add_argument("--output-path", type=str, required=True, help="Path to save UMAP coordinates (.npy)")
+    parser.add_argument("--extension", type=str, default="pkl", help="Extension of the input file (default: pkl).")
     parser.add_argument("--subsample", type=int, default=None, help="Number of rows to subsample from the flattened matrix")
     parser.add_argument("--cluster-centers", type=bool, default=False, help="Optional bool whether we plot the clusters")
     parser.add_argument("--n-neighbors", type=int, default=15, help="UMAP: number of neighbors")
@@ -41,11 +43,18 @@ def parse_args():
 
 def main():
     args = parse_args()
-    output_dir = Path(args.output).parent
-    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Construct input and output file paths
+    input_file = Path(args.input_path) / f"embedding_{args.input_name}.{args.extension}"
+    output_path = Path(args.output_path)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    output_points_file = output_path / f"umap_points_{args.input_name}.npy"
+    output_centers_file = output_path / f"umap_centers_{args.input_name}.npy"
+    output_indices_file = output_path / f"umap_indices_{args.input_name}.npy"
 
     # Load and flatten embedding    
-    with open(args.input+"embedding.pkl", "rb") as f:
+    with open(input_file, "rb") as f:
         emb = pickle.load(f)
     #with open(args.input+"markov.pkl","rb") as f:
     #    mkv = pickle.load(f)
@@ -84,18 +93,18 @@ def main():
         reduced_centers = reduced_all[N:N + emb.cluster_centers_.shape[0]]
         print(reduced_centers.shape)
         print(reduced_points.shape)
-        print(f"[INFO] Saved UMAP coordinates to {output_dir}/umap_centers.npy")
-        np.save(output_dir / "umap_centers.npy", reduced_centers)
+        print(f"[INFO] Saved UMAP coordinates to {output_centers_file}")
+        np.save(output_centers_file, reduced_centers)
     else:
         reduced_points = reduced_all
 
-    np.save(output_dir / "umap_points.npy", reduced_points)
-    print(f"[INFO] Saved UMAP coordinates to {args.output}")
+    np.save(output_points_file, reduced_points)
+    print(f"[INFO] Saved UMAP coordinates to {output_points_file}")
 
     # Optional: save subsampled labels
     if indices is not None:
-        np.save(output_dir / "umap_indices.npy", indices)
-        print(f"[INFO] Saved subsampled labels to {output_dir / 'umap_indices.npy'}")
+        np.save(output_indices_file, indices)
+        print(f"[INFO] Saved subsampled labels to {output_indices_file}")
 
 
 if __name__ == "__main__":

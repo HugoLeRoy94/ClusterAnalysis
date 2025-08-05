@@ -28,9 +28,11 @@ from src.io import load_dataframe, save_dataframe
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Compute motion phases from trajectory data.")
-    parser.add_argument("--input", type=str, required=True, help="Path to input CSV or Parquet trajectory file")
-    parser.add_argument("--output", type=str, required=True, help="Path to save phase-annotated Parquet file")    
-    parser.add_argument("--smooth",type=bool,default=False,help="if true smooth out the data before processing")    
+    parser.add_argument("--input-path", type=str, required=True, help="Path to the directory containing the input file.")
+    parser.add_argument("--input-name", type=str, required=True, help="Name of the input file (without extension).")
+    parser.add_argument("--output-path", type=str, required=True, help="Path to save phase-annotated Parquet file")
+    parser.add_argument("--extension", type=str, default="parquet", help="Extension of the input file (default: parquet).")
+    parser.add_argument("--smooth",type=bool,default=False,help="if true smooth out the data before processing")
     parser.add_argument("--groupby", type=str, default='label', help = "column names for each trajectory")
     parser.add_argument("--sortby", type=str, default='frame', help = "column names corresponding to time")
     parser.add_argument("--dt", type=float, default=1.0, help="Time step between samples")
@@ -45,8 +47,13 @@ def parse_args():
 def main():
     args = parse_args()
 
+    # Construct input and output file paths
+    input_file = Path(args.input_path) / f"{args.input_name}.{args.extension}"
+    output_file = Path(args.output_path) / f"phases_{args.input_name}.{args.extension}"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
     # Load raw data
-    df = load_dataframe(args.input)
+    df = load_dataframe(input_file)
     cols = args.cols.split(",")
     print(f"[INFO] Loaded input with {len(df)} rows using columns {cols}")
     df = filter_trajectories(df,min_length=100,groupby=args.groupby)
@@ -62,7 +69,8 @@ def main():
 
 
     longest_traj = df_phase[df_phase['label'] == df_phase['label'].value_counts().idxmax()]
-    save_dataframe(longest_traj,args.output+'longest_trajectory.csv')
+
+    save_dataframe(longest_traj,Path(args.output_path) / f"longest_trajectory_{args.input_name}.csv")
 
     # extract fixed length trajectories
     
@@ -70,8 +78,8 @@ def main():
     #df_phase['torsion_angle'] = abs(df_phase['torsion_angle'])
 
     # Save
-    save_dataframe(df_phase, args.output+'phases.parquet')
-    print(f"[INFO] Saved phase-annotated data to: {args.output}/phases.parquet")
+    save_dataframe(df_phase, output_file)
+    print(f"[INFO] Saved phase-annotated data to: {output_file}")
 
 
 if __name__ == "__main__":
