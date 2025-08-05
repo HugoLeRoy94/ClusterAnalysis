@@ -36,7 +36,7 @@ class StochasticMatrix:
         idx = np.argsort(self.val)
         self.val = self.val[idx]
         self.vec = self.vec[:, idx]
-        self.slow_mode = np.real(self.vec[:, -2])
+        self.slow_modes = np.real(self.vec[:, -2:])
 
     def compute_tr_spectrum(self) -> None:
         if self.Pr is None:
@@ -45,7 +45,7 @@ class StochasticMatrix:
         idx = np.argsort(self.tr_val)
         self.tr_val = self.tr_val[idx]
         self.tr_vec = self.tr_vec[:, idx]
-        self.tr_slow_mode = np.real(self.tr_vec[:, -2])
+        self.tr_slow_modes = np.real(self.tr_vec[:, -2:])
 
     def compute_metastability(self,time_reversed = True) -> None:
         slow_mode= self.slow_mode
