@@ -16,6 +16,7 @@ class StochasticMatrix:
         self.pi: Optional[np.ndarray] = stationary_distribution(P)
         self.Pr: Optional[np.ndarray] = None
         self.slow_mode: Optional[np.ndarray] = None
+        self.tr_slow_mode: Optional[np.ndarray] = None
 
     def reversibilized_matrix(self) -> NDArray[np.float_]:
         if self.pi is None or self.P is None:
@@ -36,7 +37,8 @@ class StochasticMatrix:
         idx = np.argsort(self.val)
         self.val = self.val[idx]
         self.vec = self.vec[:, idx]
-        self.slow_modes = np.real(self.vec[:, -2:])
+        self.slow_modes = np.real(self.vec[:, :-1])
+        self.slow_mode = self.slow_modes[:,-1]
 
     def compute_tr_spectrum(self) -> None:
         if self.Pr is None:
@@ -45,12 +47,13 @@ class StochasticMatrix:
         idx = np.argsort(self.tr_val)
         self.tr_val = self.tr_val[idx]
         self.tr_vec = self.tr_vec[:, idx]
-        self.tr_slow_modes = np.real(self.tr_vec[:, -2:])
+        self.tr_slow_modes = np.real(self.tr_vec[:, :-1])
+        self.slow_mode = self.tr_slow_modes[:,-1]
 
     def compute_metastability(self,time_reversed = True) -> None:
-        slow_mode= self.slow_mode
+        slow_mode= self.slow_modes[-1]
         if time_reversed:
-            slow_mode = self.tr_slow_mode
+            slow_mode = self.tr_slow_modes[-1]
         if slow_mode is None:
             raise RuntimeError("Compute spectrum first.")
         self.thresholds = np.linspace(slow_mode.min(), slow_mode.max(), 100)
