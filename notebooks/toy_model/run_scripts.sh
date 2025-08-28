@@ -43,6 +43,6 @@ do
         --output-path ../../data/toy_model/processed/ \
         --subsample 1000 \
         --cluster-centers True \
-        --n-neighbors 100 \
-        --min-dist 0.1
+        --n-neighbors 10 \
+        --min-dist 0.01
 done
