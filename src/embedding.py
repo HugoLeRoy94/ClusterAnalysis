@@ -43,7 +43,6 @@ class Embedding(EmbeddingBase):
         super().__init__(data, columns, Y, ID_NAME, n_trajectories,n_windows)
         self.P: Optional[np.ndarray] = None
         self.pi: Optional[np.ndarray] = None
-        self.state: Optional[int] = None
 
     def analyze_markov_process(self) -> Markov:
         """Create and return a MarkovAnalysis object."""
@@ -63,29 +62,6 @@ class Embedding(EmbeddingBase):
             out.append("stationary π  : available")
         return "\n".join(out)
 
-    # ------------------------------------------------------------------
-    # Simulate trajectories
-    # ------------------------------------------------------------------
-    def initialize_state(self):
-        self.state = np.random.randint(0, set(self.labels).__len__())
-    def pick_random_trajectory_in_cluster(self, cluster_id: int) -> NDArray[np.float_]:
-        if self.labels is None:
-            raise RuntimeError("Need the labels first.")
-        if self.state is None:
-            raise RuntimeError("Need to initialize the state first.")
-        words = np.argwhere(self.labels==cluster_id)[:,0]
-        index = np.random.randint(0, words.shape[0])
-        return self.flatten_embedding_matrix[words[index]]
-
-    def make_transition(self) -> int:
-        """ given a current state : a cluster id, returns the id of the next cluster, selected according to the transition matrix."""
-        if self.state is None:
-            raise RuntimeError("Need to initialize the state first.")
-        if self.P is None:
-            raise RuntimeError("Need to make the transition matrix first.")
-        cum_prob_array = np.cumsum(self.P[self.state])
-        rd = np.random.randint(0, 1000) / 1000.0
-        self.state = np.searchsorted(cum_prob_array, rd, side="right")
-        return self.state
+    
 
 

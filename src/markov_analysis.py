@@ -25,6 +25,20 @@ class StochasticMatrix:
         self.Pr = 0.5 * (self.P + rev_P)
         return self.Pr
 
+    def initialize_state(self):
+        self.state = np.random.randint(0, self.n_clusters)
+    
+    def make_transition(self) -> int:
+        """ given a current state : a cluster id, returns the id of the next cluster, selected according to the transition matrix."""
+        if self.state is None:
+            raise RuntimeError("Need to initialize the state first.")
+        if self.P is None:
+            raise RuntimeError("Need to make the transition matrix first.")
+        cum_prob_array = np.cumsum(self.P[self.state])
+        rd = np.random.randint(0, 1000) / 1000.0
+        self.state = np.searchsorted(cum_prob_array, rd, side="right")
+        return self.stater
+
     def implied_timescales(self, tau: float) -> NDArray[np.float_]:
         evals = np.linalg.eigvals(self.P)
         evals = np.real(evals)
@@ -65,6 +79,7 @@ class StochasticMatrix:
             meta_out.append(metastability(self.P, self.pi, B))
         self.meta_in = np.array(meta_in)
         self.meta_out = np.array(meta_out)
+    
     def compute_entropy_rate(self) -> float:
         return entropy_rate(self.P, self.pi)
 
@@ -82,6 +97,7 @@ class Markov(StochasticMatrix):
         self.K = embedding.K
             
         self.tau = tau
+        self.state: Optional[int] = None
 
         self.make_transition_matrix()
 

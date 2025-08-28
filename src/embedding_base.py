@@ -66,6 +66,7 @@ class EmbeddingBase:
         self.indices: Optional[np.ndarray] = None
         self.distance_matrix: Optional[np.ndarray] = None
         self.cluster_centers_: Optional[np.ndarray] = None
+        self.state: Optional[int] = None
 
     def make_embedding(self, K: int) -> (np.ndarray, np.ndarray):
         """Construct K‑delay vectors and concatenate over trajectories.
@@ -232,3 +233,12 @@ class EmbeddingBase:
         labels = np.argmin(distances, axis=1)
         
         return labels
+
+    def pick_random_trajectory_in_cluster(self, cluster_id: int) -> NDArray[np.float_]:
+        if self.labels is None:
+            raise RuntimeError("Need the labels first.")
+        if self.state is None:
+            raise RuntimeError("Need to initialize the state first.")
+        words = np.argwhere(self.labels==cluster_id)[:,0]
+        index = np.random.randint(0, words.shape[0])
+        return self.flatten_embedding_matrix[words[index]]
