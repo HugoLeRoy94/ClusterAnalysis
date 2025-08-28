@@ -3,7 +3,11 @@ import matplotlib.pyplot as plt
 import random
 from scipy.spatial.transform import Rotation as R
 
-def straight_line(start, n_steps, step=1.0):
+def straight_line(start, n_steps, step=1.0,distrib='deterministic'):
+    if distrib == 'gaussian':
+        n_steps = int(np.max(1,np.random.normal(loc=n_steps,scale=np.sqrt(n_steps))))
+    elif distrib=='uniform':
+        n_steps = int(np.random.uniform(low=1,high=n_steps))
     # Sample a random unit direction vector uniformly on the sphere
     vec = np.random.normal(size=3)
     vec /= np.linalg.norm(vec)
@@ -15,7 +19,11 @@ def straight_line(start, n_steps, step=1.0):
     return x, y, z
 
 
-def helix(start, n_steps, radius=5, pitch=1.0, clockwise=True, step=1.0):
+def helix(start, n_steps, radius=5, pitch=1.0, clockwise=True, step=1.0,distrib='deterministic'):
+    if distrib == 'gaussian':
+        n_steps = int(np.max(1,np.random.normal(loc=n_steps,scale=np.sqrt(n_steps))))
+    elif distrib=='uniform':
+        n_steps = int(np.random.uniform(low=1,high=n_steps))
     # 1. Generate standard z-axis helix
     theta = np.linspace(0, 2 * np.pi * n_steps * step / (2 * np.pi * radius), n_steps)
     theta = -theta if clockwise else theta
@@ -47,7 +55,7 @@ def helix(start, n_steps, radius=5, pitch=1.0, clockwise=True, step=1.0):
 
     return helix_translated[:,0],helix_translated[:,1],helix_translated[:,2]
 
-def cast_and_surge(start, n_steps, surge_axis=None, A0=5.0, decay=0.05, freq=0.5, step=1.0):
+def cast_and_surge(start, n_steps, surge_axis=None, A0=5.0, decay=0.05, freq=0.5, step=1.0,distrib='deterministic'):
     """
     Generates an oscillating cast-and-surge movement.
     - start: starting point (3,)
@@ -58,6 +66,10 @@ def cast_and_surge(start, n_steps, surge_axis=None, A0=5.0, decay=0.05, freq=0.5
     - freq: angular frequency of oscillation
     - step: forward displacement per time step
     """
+    if distrib == 'gaussian':
+        n_steps = int(np.max(1,np.random.normal(loc=n_steps,scale=np.sqrt(n_steps))))
+    elif distrib=='uniform':
+        n_steps = int(np.random.uniform(low=1,high=n_steps))
     # Forward direction (surge)
     if surge_axis is None:
         surge_axis = np.random.randn(3)
@@ -85,7 +97,7 @@ def cast_and_surge(start, n_steps, surge_axis=None, A0=5.0, decay=0.05, freq=0.5
 
     return traj[:, 0], traj[:, 1], traj[:, 2]
 
-def persistent_random_walk(start, n_steps, step_size=1.0, turn_std=np.pi / 10):
+def persistent_random_walk(start, n_steps, step_size=1.0, turn_std=np.pi / 10,distrib='deterministic'):
     """
     Generate a 3D persistent random walk with constant step size.
     - start: initial 3D position
@@ -93,6 +105,10 @@ def persistent_random_walk(start, n_steps, step_size=1.0, turn_std=np.pi / 10):
     - step_size: fixed length of each step
     - turn_std: standard deviation (radians) for angular deviation between steps
     """
+    if distrib == 'gaussian':
+        n_steps = int(np.max(1,np.random.normal(loc=n_steps,scale=np.sqrt(n_steps))))
+    elif distrib=='uniform':
+        n_steps = int(np.random.uniform(low=1,high=n_steps))
     traj = np.zeros((n_steps, 3))
     traj[0] = start
 
@@ -147,9 +163,9 @@ def generate_random_trajectory(total_steps, step_size=1.0,
             raise ValueError(f"Unknown movement type: {move}")
 
         segments.append(np.vstack([x, y, z]))
-        move_names.extend([move] * kwargs['n_steps'])
+        move_names.extend([move] * segments[-1].shape[1])
         last_point = (x[-1], y[-1], z[-1])
-        remaining_steps -= kwargs['n_steps']
+        remaining_steps -= segments[-1].shape[1]
 
     full_traj = np.hstack(segments)
     return full_traj.T, move_names
