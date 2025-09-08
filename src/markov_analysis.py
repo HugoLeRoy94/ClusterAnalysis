@@ -62,7 +62,7 @@ class StochasticMatrix:
         self.tr_val = self.tr_val[idx]
         self.tr_vec = self.tr_vec[:, idx]
         self.tr_slow_modes = np.real(self.tr_vec[:, :-1])
-        self.slow_mode = self.tr_slow_modes[:,-1]
+        self.tr_slow_mode = self.tr_slow_modes[:,-1]
 
     def compute_metastability(self,time_reversed = True) -> None:
         slow_mode= self.slow_modes[-1]
