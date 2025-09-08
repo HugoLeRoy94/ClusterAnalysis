@@ -238,3 +238,161 @@ def canonicalize_trajectory(coords, *, return_rotation=False, tol=1e-12):
 
 
     return (canon, V) if return_rotation else canon
+
+
+import numpy as np
+
+def _norm(v, eps=1e-12):
+    n = np.linalg.norm(v)
+    return v / n if n > eps else v*0.0
+
+def _rot_between(a, b, eps=1e-12):
+    """
+    Minimal rotation that maps unit vector a -> unit vector b.
+    Returns a 3x3 rotation matrix.
+    """
+    a = _norm(a)
+    b = _norm(b)
+    c = np.dot(a, b)
+    if c > 1 - eps:            # nearly identical
+        return np.eye(3)
+    if c < -1 + eps:           # opposite; pick any axis ⟂ a
+        # Choose axis as any unit vector orthogonal to 'a'
+        tmp = np.array([1.0, 0.0, 0.0])
+        if abs(np.dot(a, tmp)) > 0.9:
+            tmp = np.array([0.0, 1.0, 0.0])
+        axis = _norm(np.cross(a, tmp))
+        return _rot_axis_angle(axis, np.pi)
+    axis = _norm(np.cross(a, b))
+    angle = np.arccos(np.clip(c, -1.0, 1.0))
+    return _rot_axis_angle(axis, angle)
+
+def _rot_axis_angle(axis, angle):
+    """
+    Rodrigues' rotation formula. Axis must be unit-length (or zero for identity).
+    """
+    axis = _norm(axis)
+    x, y, z = axis
+    c = np.cos(angle)
+    s = np.sin(angle)
+    C = 1 - c
+    return np.array([
+        [c + x*x*C,     x*y*C - z*s, x*z*C + y*s],
+        [y*x*C + z*s,   c + y*y*C,   y*z*C - x*s],
+        [z*x*C - y*s,   z*y*C + x*s, c + z*z*C  ],
+    ])
+
+def _project_to_plane(v, n):
+    n = _norm(n)
+    return v - np.dot(v, n) * n
+
+def _signed_angle_in_plane(a, b, plane_normal, eps=1e-12):
+    """
+    Signed angle from a to b within the plane orthogonal to plane_normal.
+    """
+    a_p = _project_to_plane(a, plane_normal)
+    b_p = _project_to_plane(b, plane_normal)
+    na = np.linalg.norm(a_p); nb = np.linalg.norm(b_p)
+    if na < eps or nb < eps:
+        return 0.0
+    a_u = a_p / na
+    b_u = b_p / nb
+    cosang = np.clip(np.dot(a_u, b_u), -1.0, 1.0)
+    ang = np.arccos(cosang)
+    # Sign via right-hand rule around plane_normal
+    sign = np.sign(np.dot(plane_normal, np.cross(a_u, b_u)))
+    return ang * sign
+
+def _discrete_tangent(piece):
+    # piece: (K,3)
+    # use last two for end, first two for start
+    t_start = _norm(piece[1] - piece[0])
+    t_end   = _norm(piece[-1] - piece[-2])
+    return t_start, t_end
+
+def _discrete_curvature(piece):
+    # discrete 2nd-difference at start and end
+    K_start = piece[2] - 2*piece[1] + piece[0]
+    K_end   = piece[-1] - 2*piece[-2] + piece[-3]
+    return K_start, K_end
+
+def reconstruct_trajectory_from_canonical_pieces(
+    pieces, K, d=3, enforce_curvature=True, eps=1e-10
+):
+    """
+    Stitch canonicalized windows into a single 3D trajectory.
+
+    Parameters
+    ----------
+    pieces : array, shape (M, K*d)
+        Consecutive canonicalized segments (flattened row-major).
+        Each segment is centered/rotated canonically.
+    K : int
+        Window length used to build each piece.
+    d : int
+        Dimensionality (must be 3 here).
+    enforce_curvature : bool
+        If True, add a twist R_psi to match curvature direction (C2).
+        If False, only enforce tangent continuity (C1).
+    eps : float
+        Numerical tolerance.
+
+    Returns
+    -------
+    X : array, shape (K + (M-1)*(K-1), 3)
+        Reconstructed global trajectory.
+    """
+    assert d == 3, "This reconstruction targets 3D."
+    M = pieces.shape[0]
+    assert pieces.shape[1] == K*d
+
+    # reshape all pieces to (K,3)
+    segs = pieces.reshape(M, K, d).copy()
+
+    # Initialize global coordinates with the first piece as-is
+    X = [segs[0][i].copy() for i in range(K)]
+    # Keep track of the current last-segment (already placed)
+    prev = np.stack(X[-K:], axis=0)  # last placed segment (K,3)
+
+    # Precompute end tangent/curvature of the placed segment
+    t_prev_start, t_prev_end = _discrete_tangent(prev)
+    k_prev_start, k_prev_end = _discrete_curvature(prev)
+
+    for m in range(1, M):
+        seg = segs[m]  # (K,3), canonical
+
+        # Compute start tangent/curvature of the new piece (in its own frame)
+        t_next_start, _ = _discrete_tangent(seg)
+        k_next_start, _ = _discrete_curvature(seg)
+
+        # (1) Align tangents: R_theta maps t_next_start -> t_prev_end
+        R_theta = _rot_between(t_next_start, t_prev_end)
+
+        seg_rot = seg @ R_theta.T
+        k_next_start_rot = k_next_start @ R_theta.T
+
+        # (2) Optional twist around the (now aligned) tangent to match curvature
+        if enforce_curvature:
+            # Project curvature vectors to plane ⟂ t_prev_end
+            # If curvature is degenerate, skip twist.
+            a = _project_to_plane(k_prev_end, t_prev_end)
+            b = _project_to_plane(k_next_start_rot, t_prev_end)
+            if np.linalg.norm(a) > eps and np.linalg.norm(b) > eps:
+                psi = _signed_angle_in_plane(b, a, t_prev_end)
+                R_psi = _rot_axis_angle(t_prev_end, psi)
+                seg_rot = seg_rot @ R_psi.T
+            # else: psi = 0 (no reliable curvature direction)
+
+        # (3) Translate so seg_rot[0] lands on prev[-1]
+        delta = prev[-1] - seg_rot[0]
+        seg_place = seg_rot + delta
+
+        # Append without duplicating the first point
+        X.extend(seg_place[1:])
+
+        # Update 'prev' and its end derivatives for next loop
+        prev = seg_place
+        _, t_prev_end = _discrete_tangent(prev)
+        _, k_prev_end = _discrete_curvature(prev)
+
+    return np.array(X)
