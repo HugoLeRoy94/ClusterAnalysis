@@ -25,20 +25,6 @@ class StochasticMatrix:
         self.Pr = 0.5 * (self.P + rev_P)
         return self.Pr
 
-    def initialize_state(self):
-        self.state = np.random.randint(0, self.n_clusters)
-    
-    def make_transition(self) -> int:
-        """ given a current state : a cluster id, returns the id of the next cluster, selected according to the transition matrix."""
-        if self.state is None:
-            raise RuntimeError("Need to initialize the state first.")
-        if self.P is None:
-            raise RuntimeError("Need to make the transition matrix first.")
-        cum_prob_array = np.cumsum(self.P[self.state])
-        rd = np.random.randint(0, 1000) / 1000.0
-        self.state = np.searchsorted(cum_prob_array, rd, side="right")
-        return self.stater
-
     def implied_timescales(self, tau: float) -> NDArray[np.float_]:
         evals = np.linalg.eigvals(self.P)
         evals = np.real(evals)
@@ -113,3 +99,24 @@ class Markov(StochasticMatrix):
             P = C / C.sum(axis=1, keepdims=True)
         P[np.isnan(P)] = 0.0
         super().__init__(P)
+    def initialize_state(self):
+        self.state = np.random.randint(0, self.n_clusters)
+    
+    def make_transition(self) -> int:
+        """ given a current state : a cluster id, returns the id of the next cluster, selected according to the transition matrix."""
+        if self.state is None:
+            raise RuntimeError("Need to initialize the state first.")
+        if self.P is None:
+            raise RuntimeError("Need to make the transition matrix first.")
+        cum_prob_array = np.cumsum(self.P[self.state])
+        rd = np.random.randint(0, 1000) / 1000.0
+        self.state = np.searchsorted(cum_prob_array, rd, side="right")
+        return self.state
+    def build_trajectory(self,T_tot:int)->np.ndarray:
+        res = list()
+        N_mkv_steps = T_tot//self.K
+        self.initialize_state()
+        res.append(self.state)
+        for step in range(N_mkv_steps):
+            res.append(self.make_transition())
+        return np.array(res)
