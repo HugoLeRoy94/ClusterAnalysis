@@ -3,44 +3,44 @@ Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
 The top-level auxiliary file: report_1.aux
 The style file: unsrt.bst
 Database file #1: stereotypes.bib
-You've used 1 entry,
+You've used 2 entries,
             1791 wiz_defined-function locations,
-            454 strings with 3825 characters,
-and the built_in function-call counts, 311 in all, are:
-= -- 24
-> -- 14
-< -- 0
-+ -- 5
-- -- 4
-* -- 31
-:= -- 55
-add.period$ -- 3
-call.type$ -- 1
-change.case$ -- 1
+            462 strings with 4037 characters,
+and the built_in function-call counts, 497 in all, are:
+= -- 41
+> -- 18
+< -- 1
++ -- 7
+- -- 5
+* -- 39
+:= -- 83
+add.period$ -- 7
+call.type$ -- 2
+change.case$ -- 2
 chr.to.int$ -- 0
-cite$ -- 1
-duplicate$ -- 9
-empty$ -- 29
-format.name$ -- 4
-if$ -- 63
+cite$ -- 2
+duplicate$ -- 21
+empty$ -- 54
+format.name$ -- 5
+if$ -- 109
 int.to.chr$ -- 0
-int.to.str$ -- 1
-missing$ -- 1
-newline$ -- 8
-num.names$ -- 1
-pop$ -- 1
+int.to.str$ -- 2
+missing$ -- 2
+newline$ -- 13
+num.names$ -- 2
+pop$ -- 6
 preamble$ -- 1
 purify$ -- 0
 quote$ -- 0
-skip$ -- 3
+skip$ -- 6
 stack$ -- 0
 substring$ -- 33
-swap$ -- 1
-text.length$ -- 0
+swap$ -- 4
+text.length$ -- 1
 text.prefix$ -- 0
 top$ -- 0
 type$ -- 0
 warning$ -- 0
-while$ -- 2
-width$ -- 2
-write$ -- 13
+while$ -- 3
+width$ -- 3
+write$ -- 25

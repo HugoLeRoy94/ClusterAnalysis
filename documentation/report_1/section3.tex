@@ -1,0 +1,22 @@
+\section{Reinforcement Learning model}
+So far, we have proposed a general approach to analyze trajectory data of animals.
+For generality purpose, we have not yet define a specific question on an animal's behavior.
+We now propose to use the Markov chain defined in section~\ref{sec:markov} in a reinforcement learning (RL)framework.
+Reinforcement learning relies on optimizing a cost (or reward) function, which suggest an underlying question to answer.
+We consider two sets of experiments, in the first one the animal is observed in a null environment in which there is no specific goal to achieve.
+In the second experiment, the animal is trying to achieve a specific goal, in the following, we will consider that it is trying to reach a fix target.
+We propose that in a null environment the animal still display the complete list of stereotypical movement.
+Our goal is to observe, and quantify how an animal adapt its behavior to reach specific goals.
+\subsection{Linearly Solvable Markov Decision Problems}
+%Our approach does not model the environment of the animals, but instead build-on stereotypical movement directly from trajectory data.
+%As a result, our RL agent does not really take action that influence its transition to a different state, 
+%We consider two situations: 
+%Assuming that the 
+Let us first introduce a RL framework adapted from \cite{todorovLinearlysolvableMarkovDecision2006}.
+During the first experiment, we sample a stochastic matrix with components denoted $P^*_{ij}$ being the probability to transition from a cluster, hereafter called a state, $i$ to state $j$.
+We propose that animal's adaptation to a goal consists in adjusting the transition rate between states.
+To do so, we introduce a control parameter $\mathbf{u}(i) \in $ 
+
+
+
+

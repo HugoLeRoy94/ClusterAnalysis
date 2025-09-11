@@ -126,8 +126,8 @@ Y_K^i(T-K+1)
 $Y_K^i$ can be interpreted as a trajectory vector where each data point fits in a space of dimension $3K$.
 
 
-\subsection{Clustering}
-
+\subsection{Clustering and Markov Chain}
+\label{sec:markov}
 To analyze the high-dimensional trajectory segments, we begin by clustering the rows of the embedding matrix as individual vectors \(  Y_K^i(t) \) into \( N_c \) clusters using the \( k \)-means algorithm. We call these clusters states \( \{s_i\}_{i\in[0,N_c]} \) and use them to define a Markov model, capturing the dynamical behavior of the animal. For each trajectory, we estimate the transition dynamics between states by constructing a finite-dimensional approximation of the Perron–Frobenius operator via Ulam–Galerkin discretization. Specifically, for a chosen lag time \( \tau \), we define the count matrix \( C_{ij}(\tau) \) as
 \[
 C_{ij}(\tau) = \sum_{t=0}^{T-K+1 - \tau} \zeta_i(Y_{K}^i(t)) \, \zeta_j(Y_{K}^i(t + \tau)),
