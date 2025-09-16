@@ -20,7 +20,7 @@ import sys
 sys.path.append('../')
 
 
-names = ['only_persistent','stereotypes2','stereotypes4']
+names = ['straight_helix']#['only_persistent','stereotypes2','stereotypes4','straight_helix']
 data,indices = list(),list()
 embs,mkvs= list(),list()
 cluster_centers=list()
