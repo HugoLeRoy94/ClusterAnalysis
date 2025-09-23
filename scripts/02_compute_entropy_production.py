@@ -49,7 +49,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-
+    print(args.input_name)
     # Construct input and output file paths
     input_file = Path(args.input_path) / f"{args.input_name}.{args.extension}"
     output_file = Path(args.output_path) / f"entropy_scan_{args.input_name}.csv"

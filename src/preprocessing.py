@@ -107,7 +107,8 @@ def compute_phases(
         group = group.sort_values(groupsort)
         X = group[list(column_names)].to_numpy()
         phases = compute_speed_turning_angles(X, dt=dt)
-        temp = group.iloc[1:-2].copy()
+        temp = group.iloc[1:-2].copy() # euh it seems that some data might need -2 instead of -1 ??
+        #temp = group.iloc[1:-1].copy() # yes it depends on whether I compute torsion. Whatever
         temp["speed"] = phases[:, 0]
         temp["curvature_angle"] = phases[:, 1]
         if phases.shape[1] == 3:

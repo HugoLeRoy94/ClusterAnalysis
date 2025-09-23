@@ -54,6 +54,7 @@ def main():
 
     # Load raw data
     df = load_dataframe(input_file)
+    df = df.sort_values([args.groupby, args.sortby]).reset_index(drop=True)
     cols = args.cols.split(",")
     print(f"[INFO] Loaded input with {len(df)} rows using columns {cols}")
     df = filter_trajectories(df,min_length=100,groupby=args.groupby)
@@ -64,11 +65,12 @@ def main():
                                     polyorder=args.polyorder,
                                     groupby=args.groupby)    
     # Compute kinematic features and phase
-    df_phase = compute_phases(df, column_names=cols, dt=args.dt,groupby = args.groupby)
+
+    df_phase = compute_phases(df, column_names=cols, dt=args.dt,groupby = args.groupby,groupsort = args.sortby)
     print(f"[INFO] minimum length trajectory {df_phase.groupby(args.groupby).size().min()}")
 
 
-    longest_traj = df_phase[df_phase['label'] == df_phase['label'].value_counts().idxmax()]
+    longest_traj = df_phase[df_phase[args.groupby] == df_phase[args.groupby].value_counts().idxmax()]
 
     save_dataframe(longest_traj,Path(args.output_path) / f"longest_trajectory_{args.input_name}.csv")
 
@@ -77,6 +79,11 @@ def main():
     df_phase = split_trajectories(df_phase,chunk_size=args.max_length,groupby=args.groupby,sort_values=args.sortby)
     #df_phase['torsion_angle'] = abs(df_phase['torsion_angle'])
 
+    df_phase = df_phase.rename(columns={cols[0]:'x',
+                             cols[1]:'y',
+                             cols[2]:'z',
+                             args.sortby:'frame',
+                             args.groupby:'label'})
     # Save
     save_dataframe(df_phase, output_file)
     print(f"[INFO] Saved phase-annotated data to: {output_file}")

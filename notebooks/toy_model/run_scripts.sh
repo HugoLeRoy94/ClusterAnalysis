@@ -41,7 +41,7 @@ do
         --input-path ../../data/toy_model/processed/ \
         --input-name $filename \
         --output-path ../../data/toy_model/processed/ \
-        --subsample 1000 \
+        #--subsample None \
         --cluster-centers True \
         --n-neighbors 10 \
         --min-dist 0.01
