@@ -52,7 +52,7 @@ def main():
     print(args.input_name)
     # Construct input and output file paths
     input_file = Path(args.input_path) / f"{args.input_name}.{args.extension}"
-    output_file = Path(args.output_path) / f"entropy_scan_{args.input_name}.csv"
+    output_file = Path(args.output_path) / f"entropy_scan_{args.input_name}_tau{args.tau}.csv"
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     df = load_dataframe(input_file)

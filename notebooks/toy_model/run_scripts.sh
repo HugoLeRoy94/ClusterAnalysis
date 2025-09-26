@@ -9,17 +9,19 @@ do
         --polyorder 3  \
         --max-length 997
 done
-
-for filename in only_persistent stereotypes2 stereotypes4
+for tau in 1,2,3,4,5,10,20,30,50,100
 do
-  ./../../scripts/02_compute_entropy_production.py \
-      --input-path ../../data/toy_model/interim/ \
-      --input-name phases_$filename \
-      --output-path ../../data/toy_model/interim/ \
-      --columns-trans x,y,z \
-      --K-values 3,5,10,20,30,40,50 \
-      --n-clusters-values 2,3,4,5,10,25,50,100,150,250,500,1000,2000 \
-      --tau 1
+        for filename in only_persistent stereotypes2 stereotypes4
+        do
+        ./../../scripts/02_compute_entropy_production.py \
+                --input-path ../../data/toy_model/interim/ \
+                --input-name phases_$filename \
+                --output-path ../../data/toy_model/interim/ \
+                --columns-trans x,y,z \
+                --K-values 3,5,10,20,30,40,50 \
+                --n-clusters-values 2,3,4,5,10,25,50,100,150,250,500,1000,2000 \
+                --tau $tau
+        done
 done
 
 for filename in only_persistent stereotypes2 stereotypes4
@@ -41,7 +43,6 @@ do
         --input-path ../../data/toy_model/processed/ \
         --input-name $filename \
         --output-path ../../data/toy_model/processed/ \
-        #--subsample None \
         --cluster-centers True \
         --n-neighbors 10 \
         --min-dist 0.01
