@@ -1,4 +1,4 @@
-#!/mnt/hcleroy/anaconda3/bin/python3
+#!/usr/bin/env python3
 
 """
 compute_entropy_production.py — Build delay embeddings, apply k-means, build the Markov model, and compute the entropy rate.
