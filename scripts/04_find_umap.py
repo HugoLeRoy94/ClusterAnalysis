@@ -1,4 +1,5 @@
-#!/mnt/hcleroy/anaconda3/bin/python3
+#!/usr/bin/env python3
+
 
 """
 05_find_umap.py — Compute 2D UMAP of the flatten embedding matrix.

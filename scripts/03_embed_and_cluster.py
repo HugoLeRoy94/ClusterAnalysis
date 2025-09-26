@@ -1,4 +1,5 @@
-#!/mnt/hcleroy/anaconda3/bin/python3
+#!/usr/bin/env python3
+
 
 """
 embed_and_cluster.py — Build delay embeddings and apply k-means clustering.

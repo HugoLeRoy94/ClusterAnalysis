@@ -1,4 +1,5 @@
-#!/mnt/hcleroy/anaconda3/bin/python3
+#!/usr/bin/env python3
+
 
 """
 make_phases.py — Compute speed, turning angle, and motion phases for copepod trajectories.
