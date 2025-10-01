@@ -1,3 +1,7 @@
 [submodule "documentation"]
 	path = documentation
 	url = https://github.com/HugoLeRoy94/stereotype_doc.git
+[submodule "predictive-entropy"]
+	path = predictive-entropy
+	url = https://github.com/HugoLeRoy94/predictive-entropy.git
+	branch = main
