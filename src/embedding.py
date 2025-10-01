@@ -15,32 +15,33 @@ __all__ = ["Embedding"]
 
 
 class Embedding(EmbeddingBase):
-    """Time‑delay embedding + k‑means + Markov analysis.
+    """
+    Time-delay embedding + k-means + Markov analysis.
 
-    Parameters
-    ----------
-    data : pd.DataFrame
-        Long‑table format. Each row is a single time‑step.  One column contains the
-        trajectory identifier (``ID_NAME``).  The columns listed in *columns* are
-        the dynamical coordinates to embed.
-    columns : List[str]
-        Names of the coordinate columns to use for the embedding.
-    Nsamples : int | "all", default "all"
-        How many trajectories (unique IDs) to load.  Useful for fast prototyping.
-    ID_NAME : str, default "ID"
-        Column that carries the trajectory identifier.
+    Initialize either from a DataFrame (`data` + `columns` + `ID_NAME`),
+    or directly from a prebuilt array `Y` with shape (N, T, d).
     """
 
     def __init__(
         self,
-        data: pd.DataFrame,
-        columns: List[str],
-        Y: np.ndarray | None = None,
+        data: Optional[pd.DataFrame] = None,
+        *,
+        columns: Optional[Sequence[str]] = None,
         ID_NAME: str = "ID",
         n_trajectories: Optional[int] = None,
+        Y: Optional[np.ndarray] = None,
         n_windows: Optional[int] = None,
+        rng: Optional[np.random.Generator] = None,
     ) -> None:
-        super().__init__(data, columns, Y, ID_NAME, n_trajectories,n_windows)
+        super().__init__(
+            data=data,
+            columns=columns,
+            ID_NAME=ID_NAME,
+            n_trajectories=n_trajectories,
+            Y=Y,
+            n_windows=n_windows,
+            rng=rng,
+        )
         self.P: Optional[np.ndarray] = None
         self.pi: Optional[np.ndarray] = None
 

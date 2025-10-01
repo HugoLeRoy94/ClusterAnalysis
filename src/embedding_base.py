@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -17,12 +17,6 @@ from scipy.spatial.distance import cdist
 import umap
 
 __all__ = ["EmbeddingBase"]
-
-
-from __future__ import annotations
-from typing import Optional, Sequence
-import numpy as np
-import pandas as pd
 
 class EmbeddingBase:
     """

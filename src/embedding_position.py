@@ -7,45 +7,81 @@ from src.trajectory_utils import canonicalize_trajectory
 
 
 class EmbeddingPosition(EmbeddingBase):
+    """
+    Like Embedding, but also stores a *translated* coordinate block
+    (e.g. absolute positions) alongside the absolute features used to build Y.
+
+    Only DataFrame-based initialization is supported here because we need
+    both `columns` and `columns_translated` extracted with the same T_min.
+    """
+
     def __init__(
         self,
         data: pd.DataFrame,
-        columns: List[str],              # absolute features (e.g. speed, curvature)
-        columns_translated: List[str],   # shifted features (e.g. x, y, z)
-        Y: np.ndarray | None = None,
+        *,
+        columns: Sequence[str],              # absolute features for Y (e.g. speed, curvature)
+        columns_translated: Sequence[str],   # shifted features (e.g. x, y, z)
         ID_NAME: str = "ID",
         n_trajectories: Optional[int] = None,
         n_windows: Optional[int] = None,
+        rng: Optional[np.random.Generator] = None,
     ) -> None:
-        self.columns_translated = columns_translated
+        if data is None:
+            raise ValueError("EmbeddingPosition requires `data` (DataFrame).")
+        for c in list(columns) + list(columns_translated):
+            if c not in data.columns:
+                raise ValueError(f"Column '{c}' not found in DataFrame.")
+        if ID_NAME not in data.columns:
+            raise ValueError(f"`ID_NAME='{ID_NAME}'` not found in DataFrame.")
+
+        self.columns_translated = tuple(columns_translated)
         self.ID_NAME = ID_NAME
 
-        if Y is not None:
-            raise NotImplementedError("Only raw DataFrame input is supported in this subclass.")
+        # Select IDs (optionally subsample)
+        ids = data[ID_NAME].unique()
+        if n_trajectories is not None:
+            if rng is None:
+                rng = np.random.default_rng(42)
+            if n_trajectories > len(ids):
+                raise ValueError(f"n_trajectories={n_trajectories} > available IDs={len(ids)}.")
+            ids = rng.choice(ids, size=int(n_trajectories), replace=False)
 
-        # Get subset of trajectories
-        if n_trajectories is None:
-                wanted_ids = data[ID_NAME].unique()
-        else:
-            rng = np.random.default_rng(seed=42)  # or pass the seed as an argument
-            wanted_ids = rng.choice(data[ID_NAME].unique(), size=int(n_trajectories), replace=False)
-        subset = data[data[ID_NAME].isin(wanted_ids)]
+        subset = data[data[ID_NAME].isin(ids)]
 
-        # Extract both sets of trajectories with same T_min
-        trajs_abs, trajs_trans, T_min = [], [], np.inf
+        # Build aligned blocks with common T_min
+        trajs_abs, trajs_trans = [], []
+        T_min = np.inf
         for _, traj_df in subset.groupby(ID_NAME, sort=False):
-            traj_abs = traj_df.sort_index()[columns].values.astype(float)
-            traj_trans = traj_df.sort_index()[columns_translated].values.astype(float)
-            T_min = min(T_min, traj_abs.shape[0], traj_trans.shape[0])
-            trajs_abs.append(traj_abs)
-            trajs_trans.append(traj_trans)
+            arr_abs = traj_df[list(columns)].to_numpy(dtype=float)
+            arr_trans = traj_df[list(columns_translated)].to_numpy(dtype=float)
+            if arr_abs.size == 0 or arr_trans.size == 0:
+                continue
+            T_min = min(T_min, arr_abs.shape[0], arr_trans.shape[0])
+            trajs_abs.append(arr_abs)
+            trajs_trans.append(arr_trans)
 
-        Y_abs = np.stack([traj[:T_min] for traj in trajs_abs])
-        Y_trans = np.stack([traj[:T_min] for traj in trajs_trans])
+        if not trajs_abs:
+            raise ValueError("No trajectories found after filtering.")
 
-        self.Y_translated = Y_trans
-        super().__init__(data, columns=columns, Y=Y_abs, ID_NAME=ID_NAME, n_trajectories=n_trajectories,n_windows=n_windows)
-        self.D += len(columns_translated)
+        T_min = int(T_min)
+        Y_abs = np.stack([a[:T_min] for a in trajs_abs], axis=0)          # (N, T, d_abs)
+        Y_trans = np.stack([a[:T_min] for a in trajs_trans], axis=0)      # (N, T, d_trans)
+
+        # Store translated block and initialize base with Y_abs
+        self.Y_translated = Y_trans                                       # kept aligned with self.Y
+        super().__init__(
+            data=None,            # we pass Y directly to avoid re-parsing data
+            columns=tuple(columns),
+            ID_NAME=ID_NAME,
+            n_trajectories=None,  # already applied
+            Y=Y_abs,
+            n_windows=n_windows,
+            rng=rng,
+        )
+
+        # Optionally, record the total feature dimension if you plan to concatenate later
+        # self.D is from Y_abs; add translated block dimensionality if useful downstream
+        self.D_total = self.D + Y_trans.shape[2]
 
     def make_embedding(self, K: int) -> (np.ndarray, np.ndarray):
         if K < 3 or K > self.T:
