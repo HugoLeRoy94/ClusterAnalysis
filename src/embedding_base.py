@@ -19,49 +19,105 @@ import umap
 __all__ = ["EmbeddingBase"]
 
 
+from __future__ import annotations
+from typing import Optional, Sequence
+import numpy as np
+import pandas as pd
+
 class EmbeddingBase:
-    """Base class for time‑delay embedding and clustering."""
+    """
+    EmbeddingBase
+    -------------
+    Initialize from either:
+      (A) a tidy pandas DataFrame with one row per timepoint and a column holding
+          the trajectory identifier (e.g. "ID"), plus position columns (e.g. ["x","y","z"]);
+      (B) a prebuilt NumPy array Y with shape (N, T, d), where N = #trajectories,
+          T = #timepoints per trajectory (assumed equal across trajectories),
+          and d = dimensionality (2 or 3 typically).
+
+    Use case (A) when your raw data is tabular and you want this class to stack
+    trajectories into a uniform Y array. Use case (B) when you already have Y.
+    """
 
     def __init__(
         self,
-        data: pd.DataFrame,
-        columns: List[str],
-        Y: np.ndarray | None = None,
+        data: Optional[pd.DataFrame] = None,
+        *,
+        # Parameters for DataFrame-based init (case A)
+        columns: Optional[Sequence[str]] = None,   # e.g. ("x","y","z")
         ID_NAME: str = "ID",
-        n_trajectories: Optional[int] = None,
+        n_trajectories: Optional[int] = None,      # sample at most this many IDs
+        # Parameters for prebuilt-array init (case B)
+        Y: Optional[np.ndarray] = None,
+        # Misc metadata (optional)
         n_windows: Optional[int] = None,
+        rng: Optional[np.random.Generator] = None,
     ) -> None:
-        self.columns = columns
-        self.D = len(columns)
-        self.ID_NAME = ID_NAME
-        self.n_trajectories = n_trajectories
+
+        # ---- choose init path ----
+        if (Y is None) == (data is None):
+            raise ValueError("Pass exactly one of `data` or `Y` (not both, not neither).")
+
         self.n_windows = n_windows
-        # Grab at most *Nsamples* trajectories
-        # Re‑index time per trajectory so that T is consistent across worms
-        if Y is None:
-            if self.n_trajectories is None:
-                wanted_ids = data[ID_NAME].unique()
-            else:
-                rng = np.random.default_rng(seed=42)  # or pass the seed as an argument
-                wanted_ids = rng.choice(data[ID_NAME].unique(), size=int(self.n_trajectories), replace=False)
-            subset = data[data[ID_NAME].isin(wanted_ids)]
+
+        if Y is not None:
+            # ---------- Case B: direct array ----------
+            Y = np.asarray(Y, dtype=float)
+            if Y.ndim != 3:
+                raise ValueError(f"`Y` must have shape (N, T, d); got {Y.shape}.")
+            self.Y = Y
+            self.T = int(Y.shape[1])
+            self.Nsample = int(Y.shape[0])
+            self.D = int(Y.shape[2])
+            # DF-related attributes not applicable
+            self.columns = tuple(f"x{j}" for j in range(self.D))
+            self.ID_NAME = ID_NAME  # kept for API symmetry, but unused in this mode
+
+        else:
+            # ---------- Case A: DataFrame -> Y ----------
+            if columns is None or len(columns) == 0:
+                raise ValueError("`columns` must be provided (e.g. ('x','y','z')) when initializing from DataFrame.")
+            if ID_NAME not in data.columns:
+                raise ValueError(f"`ID_NAME='{ID_NAME}'` not found in DataFrame columns.")
+            for c in columns:
+                if c not in data.columns:
+                    raise ValueError(f"Column '{c}' not found in DataFrame.")
+
+            self.columns = tuple(columns)
+            self.D = len(self.columns)
+            self.ID_NAME = ID_NAME
+
+            ids = data[ID_NAME].unique()
+            if n_trajectories is not None:
+                if rng is None:
+                    rng = np.random.default_rng(42)
+                if n_trajectories > len(ids):
+                    raise ValueError(f"n_trajectories={n_trajectories} > available IDs={len(ids)}.")
+                ids = rng.choice(ids, size=int(n_trajectories), replace=False)
+
+            subset = data[data[ID_NAME].isin(ids)]
+            # Group per trajectory, keep original order (no sort by key)
             trajs = []
             T_min = np.inf
             for _, traj_df in subset.groupby(ID_NAME, sort=False):
-                traj_arr = traj_df.sort_index()[columns].values.astype(float)
-                trajs.append(traj_arr)
-                T_min = min(T_min, traj_arr.shape[0])
+                # If you have a time column, you could sort by it here before taking values.
+                arr = traj_df[self.columns].to_numpy(dtype=float)
+                if arr.shape[0] == 0:
+                    continue
+                trajs.append(arr)
+                T_min = min(T_min, arr.shape[0])
+
+            if not trajs:
+                raise ValueError("No trajectories found after filtering.")
             self.T = int(T_min)
-            self.Y = np.stack([traj[: self.T] for traj in trajs])  # shape (N, T, d)
-        else:
-            self.Y = Y
-            self.T = self.Y.shape[1]
-        self.Nsample = self.Y.shape[0]  # number of individual trajectories
-        # Place‑holders that will be filled later
+            self.Y = np.stack([a[:self.T] for a in trajs], axis=0)  # (N, T, d)
+            self.Nsample = self.Y.shape[0]
+
+        # ---- placeholders filled later by downstream steps ----
         self.K: Optional[int] = None
         self.n_clusters: Optional[int] = None
-        self.embedding_matrix: Optional[np.ndarray] = None  # flattened embedding, shape (N,(T-K+1), K·d)
-        self.flatten_embedding_matrix: Optional[np.ndarray] = None  # flattened embedding, shape (N*(T-K+1), K·d)
+        self.embedding_matrix: Optional[np.ndarray] = None       # (N, T-K+1, K*d)
+        self.flatten_embedding_matrix: Optional[np.ndarray] = None  # (N*(T-K+1), K*d)
         self.labels: Optional[np.ndarray] = None
         self.indices: Optional[np.ndarray] = None
         self.distance_matrix: Optional[np.ndarray] = None
