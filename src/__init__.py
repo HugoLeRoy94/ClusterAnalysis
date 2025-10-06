@@ -14,7 +14,9 @@ from .preprocessing import (
     filter_trajectories,
 )
 
+from .embedding_base import EmbeddingBase
 from .embedding import Embedding
+from .embedding_position import EmbeddingPosition
 
 __all__ = [
     # preprocessing
@@ -24,6 +26,8 @@ __all__ = [
     "filter_trajectories",
     # embedding
     "Embedding",
+    "EmbeddingBase",
+    "EmbeddingPosition",
     # markov
     "count_transitions",
     "stationary_distribution",

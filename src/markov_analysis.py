@@ -11,21 +11,21 @@ from src.trajectory_utils import (
 from src.embedding_base import EmbeddingBase
 
 class StochasticMatrix:
-    def __init__(self, P: NDArray[np.float_]) -> None:
+    def __init__(self, P: NDArray[np.float64]) -> None:
         self.P = P
         self.pi: Optional[np.ndarray] = stationary_distribution(P)
         self.Pr: Optional[np.ndarray] = None
         self.slow_mode: Optional[np.ndarray] = None
         self.tr_slow_mode: Optional[np.ndarray] = None
 
-    def reversibilized_matrix(self) -> NDArray[np.float_]:
+    def reversibilized_matrix(self) -> NDArray[np.float64]:
         if self.pi is None or self.P is None:
             raise RuntimeError("Need stationary distribution and stochastic matrix.")
         rev_P = time_reversed_transition_matrix(self.P, self.pi)
         self.Pr = 0.5 * (self.P + rev_P)
         return self.Pr
 
-    def implied_timescales(self, tau: float) -> NDArray[np.float_]:
+    def implied_timescales(self, tau: float) -> NDArray[np.float64]:
         evals = np.linalg.eigvals(self.P)
         evals = np.real(evals)
         evals = evals[np.argsort(-evals)]
@@ -87,7 +87,7 @@ class Markov(StochasticMatrix):
 
         self.make_transition_matrix()
 
-    def make_transition_matrix(self) -> NDArray[np.float_]:
+    def make_transition_matrix(self) -> NDArray[np.float64]:
         C = count_transitions(
             self.labels,
             self.n_clusters,

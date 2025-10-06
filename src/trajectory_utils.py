@@ -23,7 +23,7 @@ def count_transitions(labels: np.ndarray, n_clusters: int, tau: int, nsample: in
             C[i, j] += 1.0
     return C
 
-def stationary_distribution(P: NDArray[np.float_], tol: float = 1e-12, maxiter: int = 10000) -> NDArray[np.float_]:
+def stationary_distribution(P: NDArray[np.float64], tol: float = 1e-12, maxiter: int = 10000) -> NDArray[np.float64]:
     """
     Compute the stationary distribution π such that πᵀ P = πᵀ.
 
@@ -80,7 +80,7 @@ def time_reversed_transition_matrix(P: np.ndarray, pi: np.ndarray, eps=1e-15) ->
                 P_rev[i,j] = pi[j]*P[j,i]/pi[i]
 
     return P_rev
-def metastability(P: NDArray[np.float_], pi: NDArray[np.float_], S: NDArray[np.int_]) -> float:
+def metastability(P: NDArray[np.float64], pi: NDArray[np.float64], S: NDArray[np.int_]) -> float:
     """
     Metastability of a subset S:
     Probability of remaining in S after one step, conditioned on being in S.

@@ -1,6 +1,7 @@
 from src.embedding_base import EmbeddingBase
 from src.markov_analysis import Markov
-from typing import List, Optional
+from typing import List, Optional, Sequence
+from scipy.spatial.distance import cdist
 import numpy as np
 import pandas as pd
 from src.trajectory_utils import canonicalize_trajectory
@@ -125,7 +126,6 @@ class EmbeddingPosition(EmbeddingBase):
                 flatten_out_row += 1
 
         return self.embedding_matrix, self.flatten_embedding_matrix
-
     def classify_trajectory(self, trajectory_abs: Optional[np.ndarray] = None, trajectory_trans: Optional[np.ndarray] = None) -> np.ndarray:
         """Classify each point of a single trajectory into a cluster.
 
@@ -199,7 +199,6 @@ class EmbeddingPosition(EmbeddingBase):
                 combined = np.concatenate(windows, axis=1)
                 embedded_trajectory[t] = combined.reshape(-1)
 
-        from scipy.spatial.distance import cdist
         distances = cdist(embedded_trajectory, self.cluster_centers_)
         labels = np.argmin(distances, axis=1)
         

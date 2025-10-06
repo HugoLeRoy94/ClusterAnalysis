@@ -36,7 +36,7 @@ def count_transitions(labels: np.ndarray, n_clusters: int, tau: int, nsample: in
             C[i, j] += 1.0
     return C
 
-def stationary_distribution(P: NDArray[np.float_], tol: float = 1e-12, maxiter: int = 10000) -> NDArray[np.float_]:
+def stationary_distribution(P: NDArray[np.float64], tol: float = 1e-12, maxiter: int = 10000) -> NDArray[np.float64]:
     """
     Computes the stationary distribution of a Markov chain.
 
@@ -46,12 +46,12 @@ def stationary_distribution(P: NDArray[np.float_], tol: float = 1e-12, maxiter: 
     it falls back to computing the eigenvector corresponding to the eigenvalue 1 of P.T.
 
     Args:
-        P (NDArray[np.float_]): The transition probability matrix (row-stochastic).
+        P (NDArray[np.float64]): The transition probability matrix (row-stochastic).
         tol (float): The tolerance for checking convergence of the power iteration.
         maxiter (int): The maximum number of iterations for the power iteration method.
 
     Returns:
-        NDArray[np.float_]: A 1D array representing the stationary distribution.
+        NDArray[np.float64]: A 1D array representing the stationary distribution.
     """
     n = P.shape[0]
     pi = np.ones(n) / n
