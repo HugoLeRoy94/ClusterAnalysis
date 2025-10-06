@@ -283,9 +283,67 @@ class EmbeddingBase:
         
         return labels
 
-    def pick_random_trajectory_in_cluster(self, cluster_id: int) -> NDArray[np.float_]:
+    def pick_random_trajectory_in_cluster(self, cluster_id: int) -> NDArray[np.float64]:
         if self.labels is None:
             raise RuntimeError("Need the labels first.")
         words = np.argwhere(self.labels==cluster_id)[:,0]
         index = np.random.randint(0, words.shape[0])
         return self.flatten_embedding_matrix[words[index]]
+
+    def classify_trajectory(self, trajectory: np.ndarray) -> np.ndarray:
+        """Classify each point of a single trajectory into a cluster.
+
+        Parameters
+        ----------
+        trajectory_abs : np.ndarray, optional
+            A single trajectory of shape (T, d_abs) for absolute features.
+            Required if the model was trained with absolute features.
+        trajectory_trans : np.ndarray, optional
+            A single trajectory of shape (T, d_trans) for translated features.
+            Required if the model was trained with translated features.
+
+        Returns
+        -------
+        np.ndarray
+            An array of cluster labels for each point in the trajectory.
+        """
+        if self.cluster_centers_ is None:
+            raise RuntimeError("Clustering must be performed first.")
+
+        d = len(self.columns)
+
+        if d > 0 and trajectory is None:
+            raise ValueError("Model was trained with absolute features, but 'trajectory_abs' was not provided.")        
+        if d == 0 and trajectory is not None:
+            raise ValueError("'trajectory_abs' was provided, but model was not trained with absolute features.")
+
+        # Determine trajectory length and check consistency
+        T = -1
+        if trajectory is not None:
+            T = trajectory.shape[0]
+            if trajectory.shape[1] != d:
+                raise ValueError(f"trajectory_abs has wrong dimension {trajectory.shape[1]}, expected {d}")
+
+        if T == -1:
+            if d > 0:
+                raise ValueError("At least one trajectory must be provided.")
+            else: # No features were used in the model, so no classification is possible.
+                return np.array([])
+
+
+        L = T - self.K + 1
+        if L < 1:
+            raise ValueError("Trajectory is too short for the given embedding window K.")
+
+        embedded_dim = self.K * d
+        embedded_trajectory = np.empty((L, embedded_dim), dtype=float)
+
+        for t in range(L):
+            windows = []
+            win = trajectory[t:t + self.K]
+            embedded_trajectory[t] = win.reshape(-1)
+
+        distances = cdist(embedded_trajectory, self.cluster_centers_)
+        labels = np.argmin(distances, axis=1)
+        
+        return labels
