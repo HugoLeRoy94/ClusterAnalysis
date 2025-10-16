@@ -77,7 +77,7 @@ def main():
     else :
         feature_cols = []
     if args.columns_trans is None:
-        emb = Embedding(df, columns=feature_cols, ID_NAME=args.groupby,n_trajectories=args.n_trajectories,n_windows=args.n_window)
+        emb = Embedding(df, columns=feature_cols, ID_NAME=args.groupby,n_trajectories=args.n_trajectories,n_windows=args.n_windows)
     else :
         feature_cols_trans = args.columns_trans.split(",")
         emb = EmbeddingPosition(df, columns=feature_cols,columns_translated = feature_cols_trans,ID_NAME=args.groupby,n_trajectories = args.n_trajectories,n_windows=args.n_windows)
@@ -103,7 +103,7 @@ def main():
         #eig_val, eig_vec = np.linalg.eig(P)
         #real_spectrum = np.real(eig_val)
         #real_spectrum = real_spectrum[np.argsort(real_spectrum)][::-1]
-        eig_val_10[tau] = mkv.val[-10:].tolist()#real_spectrum[:10].tolist()
+        eig_val_10[tau] = mkv.eigvals[-10:].tolist()#real_spectrum[:10].tolist()
 
         h = mkv.compute_entropy_rate()
         ts = mkv.implied_timescales(tau=tau)

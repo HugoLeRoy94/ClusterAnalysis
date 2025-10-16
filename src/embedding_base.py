@@ -77,7 +77,7 @@ class EmbeddingBase:
                 if c not in data.columns:
                     raise ValueError(f"Column '{c}' not found in DataFrame.")
 
-            self.columns = tuple(columns)
+            self.columns = columns
             self.D = len(self.columns)
             self.ID_NAME = ID_NAME
 

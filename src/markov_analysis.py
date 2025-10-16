@@ -10,6 +10,10 @@ from src.trajectory_utils import (
 )
 from src.embedding_base import EmbeddingBase
 
+def _sort_idx(vals: np.ndarray) -> np.ndarray:
+    # sort by increasing Re(λ), break ties by |λ|
+    return np.lexsort((np.abs(vals), np.real(vals)))
+
 class StochasticMatrix:
     def __init__(self, P: NDArray[np.float64]) -> None:
         self.P = P
@@ -32,23 +36,37 @@ class StochasticMatrix:
         return -tau / np.log(np.clip(evals[1:], 1e-15, 1 - 1e-15))
 
     def compute_spectrum(self) -> None:
-        self.val, self.vec = np.linalg.eig(self.P.T)
-        self.val = np.real(self.val)
-        idx = np.argsort(self.val)
-        self.val = self.val[idx]
-        self.vec = self.vec[:, idx]
-        self.slow_modes = np.real(self.vec[:, :-1])
-        self.slow_mode = self.slow_modes[:,-1]
+        # right: P r = λ r
+        vals_r, vecs_r = np.linalg.eig(self.P)
+        # left:  l^T P = λ l^T  <=>  P^T l = λ l
+        vals_l, vecs_l = np.linalg.eig(self.P.T)
+        # sort both with the same rule
+        idx_r = _sort_idx(vals_r)
+        idx_l = _sort_idx(vals_l)
+        self.eigvals = np.real(vals_l[idx_r])          # single eigenvalue array
+        self.right_eigvecs = np.real(vecs_r[:, idx_r]) # columns = right eigenvectors
+        self.left_eigvecs  = np.real(vecs_l[:, idx_l]) # columns = left  eigenvectors
+        # convenience: slow modes exclude λ≈1 (last after this sorting)
+        self.slow_modes = self.right_eigvecs[:, :-1]
+        self.slow_mode  = self.slow_modes[:, -1] if self.slow_modes.size else None
 
     def compute_tr_spectrum(self) -> None:
         if self.Pr is None:
             raise RuntimeError("Run reversibilized_matrix first.")
-        self.tr_val, self.tr_vec = np.linalg.eig(self.Pr.T)
-        idx = np.argsort(self.tr_val)
-        self.tr_val = self.tr_val[idx]
-        self.tr_vec = self.tr_vec[:, idx]
-        self.tr_slow_modes = np.real(self.tr_vec[:, :-1])
-        self.tr_slow_mode = self.tr_slow_modes[:,-1]
+
+        vals_r, vecs_r = np.linalg.eig(self.Pr)
+        vals_l, vecs_l = np.linalg.eig(self.Pr.T)
+
+        idx_r = _sort_idx(vals_r)
+        idx_l = _sort_idx(vals_l)
+
+        self.tr_eigvals = np.real(vals_l[idx_r])
+        self.tr_right_eigvecs = np.real(vecs_r[:, idx_r])
+        self.tr_left_eigvecs  = np.real(vecs_l[:, idx_l])
+
+        self.tr_slow_modes = self.tr_right_eigvecs[:, :-1]
+        self.tr_slow_mode  = self.tr_slow_modes[:, -1] if self.tr_slow_modes.size else None
+
 
     def compute_metastability(self,time_reversed = True) -> None:
         slow_mode= self.slow_modes[-1]
