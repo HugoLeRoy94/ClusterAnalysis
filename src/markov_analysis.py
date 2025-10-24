@@ -96,7 +96,7 @@ class Markov(StochasticMatrix):
         
         self.labels = embedding.labels
         self.n_clusters = embedding.n_clusters
-        self.Nsample = embedding.Nsample
+        self.Nsample = embedding.N
         self.T = embedding.T
         self.K = embedding.K
             

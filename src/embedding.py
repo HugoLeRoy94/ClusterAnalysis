@@ -32,6 +32,7 @@ class Embedding(EmbeddingBase):
         Y: Optional[np.ndarray] = None,
         n_windows: Optional[int] = None,
         rng: Optional[np.random.Generator] = None,
+        embedding_matrix : Optional[np.ndarray] = None,
     ) -> None:
         super().__init__(
             data=data,
@@ -41,6 +42,7 @@ class Embedding(EmbeddingBase):
             Y=Y,
             n_windows=n_windows,
             rng=rng,
+            embedding_matrix = embedding_matrix
         )
         self.P: Optional[np.ndarray] = None
         self.pi: Optional[np.ndarray] = None

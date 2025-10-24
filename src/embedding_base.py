@@ -46,27 +46,44 @@ class EmbeddingBase:
         # Misc metadata (optional)
         n_windows: Optional[int] = None,
         rng: Optional[np.random.Generator] = None,
+        embedding_matrix: Optional[np.ndarray] = None,
     ) -> None:
 
-        # ---- choose init path ----
-        if (Y is None) == (data is None):
-            raise ValueError("Pass exactly one of `data` or `Y` (not both, not neither).")
+        # ---- placeholders filled later by downstream steps ----
+        self.K: Optional[int] = None
+        self.n_clusters: Optional[int] = None
+        self.embedding_matrix: Optional[np.ndarray] = None       # (N, T-K+1, K*d)
+        self.flatten_embedding_matrix: Optional[np.ndarray] = None  # (N*(T-K+1), K*d)
+        self.labels: Optional[np.ndarray] = None
+        self.indices: Optional[np.ndarray] = None
+        self.distance_matrix: Optional[np.ndarray] = None
+        self.cluster_centers_: Optional[np.ndarray] = None
+        self.Y: Optional[np.ndarray] = None
+        self.Y_labels: Optional[np.ndarray] = None           # (N, T) per-timepoint labels or None
+        self.embedding_labels: Optional[np.ndarray] = None   # (N, L) window labels
+        self.flatten_embedding_labels: Optional[np.ndarray] = None  # (N*L,)
+
 
         self.n_windows = n_windows
+        # ---- choose init path ----
+        if (Y is None) == (data is None):
+            if embedding_matrix is not None:
+                self.make_embedding(embedding_matrix = embedding_matrix)
+            else:
+                raise ValueError("Pass exactly one of `data` or `Y` (not both, not neither).")        
 
-        if Y is not None:
+        elif Y is not None:
             # ---------- Case B: direct array ----------
             Y = np.asarray(Y, dtype=float)
             if Y.ndim != 3:
                 raise ValueError(f"`Y` must have shape (N, T, d); got {Y.shape}.")
             self.Y = Y
             self.T = int(Y.shape[1])
-            self.Nsample = int(Y.shape[0])
+            self.N = int(Y.shape[0])
             self.D = int(Y.shape[2])
             # DF-related attributes not applicable
             self.columns = tuple(f"x{j}" for j in range(self.D))
             self.ID_NAME = ID_NAME  # kept for API symmetry, but unused in this mode
-
         else:
             # ---------- Case A: DataFrame -> Y ----------
             if columns is None or len(columns) == 0:
@@ -90,6 +107,8 @@ class EmbeddingBase:
                 ids = rng.choice(ids, size=int(n_trajectories), replace=False)
 
             subset = data[data[ID_NAME].isin(ids)]
+            trajs = []
+            label_trajs = []  
             # Group per trajectory, keep original order (no sort by key)
             trajs = []
             T_min = np.inf
@@ -101,28 +120,47 @@ class EmbeddingBase:
                 trajs.append(arr)
                 T_min = min(T_min, arr.shape[0])
 
+                if has_labels:
+                    lab = traj_df["move_type"].to_numpy()  # dtype can be object/str/int
+                else:
+                    lab = None
+                label_trajs.append(lab)
+
             if not trajs:
                 raise ValueError("No trajectories found after filtering.")
             self.T = int(T_min)
             self.Y = np.stack([a[:self.T] for a in trajs], axis=0)  # (N, T, d)
-            self.Nsample = self.Y.shape[0]
+            self.N = self.Y.shape[0]
 
-        # ---- placeholders filled later by downstream steps ----
-        self.K: Optional[int] = None
-        self.n_clusters: Optional[int] = None
-        self.embedding_matrix: Optional[np.ndarray] = None       # (N, T-K+1, K*d)
-        self.flatten_embedding_matrix: Optional[np.ndarray] = None  # (N*(T-K+1), K*d)
-        self.labels: Optional[np.ndarray] = None
-        self.indices: Optional[np.ndarray] = None
-        self.distance_matrix: Optional[np.ndarray] = None
-        self.cluster_centers_: Optional[np.ndarray] = None
+            # Align labels to the same T; store as (N, T) or None
+            if has_labels and all(lt is not None for lt in label_trajs):
+                # pad/crop each to T, then stack with dtype=object to keep strings/NaNs
+                self.Y_labels = np.empty((self.N, self.T), dtype=object)
+                for i, lt in enumerate(label_trajs):
+                    self.Y_labels[i, :] = np.asarray(lt[:self.T], dtype=object)
+            else:
+                self.Y_labels = None
 
-    def make_embedding(self, K: int) -> (np.ndarray, np.ndarray):
+
+
+    def make_embedding(self, K: int=1, embedding_matrix: Optional[np.ndarrya] = None) -> None:
         """Construct K‑delay vectors and concatenate over trajectories.
 
         After the call, ``self.embedding_matrix`` has shape *(N,(T-K+1), K·d)* and is returned.
         ``self.flatten_embedding_matrix`` has shape *(N*T-K+1), K·d)* and is returned.
         """
+        if embedding_matrix is not None:
+            self.embedding_matrix = embedding_matrix
+            self.K = K
+            self.D = embedding_matrix.shape[2]//K
+            self.N = embedding_matrix.shape[0]
+            self.L = embedding_matrix.shape[1]
+            self.T = self.L +self.K -1
+            self.flatten_embedding_matrix = embedding_matrix.reshape(-1,embedding_matrix.shape[2])
+            # If labels already provided as windows (optional future extension), set here.
+            self.embedding_labels = None
+            self.flatten_embedding_labels = None
+            return
         if K < 1 or K > self.T:
             raise ValueError("K must be in the range [1, T]")
         self.K = K
@@ -130,16 +168,28 @@ class EmbeddingBase:
         self.L = self.T - K + 1  # number of windows per trajectory
         self.embedding_matrix = np.empty((self.N, self.L, self.K * self.D), dtype=float)
         self.flatten_embedding_matrix = np.empty((self.N * self.L, self.K * self.D), dtype=float)
-        flatten_out_row = 0
+        # Prepare labels if available
+        if self.Y_labels is not None:
+            self.embedding_labels = np.empty((self.N, self.L), dtype=object)
+            self.flatten_embedding_labels = np.empty((self.N * self.L,), dtype=object)
+        else:
+            self.embedding_labels = None
+            self.flatten_embedding_labels = None
+
+        flat_row = 0
         for n in range(self.N):
-            out_row = 0
             for t in range(self.L):
-                window = self.Y[n, t : t + self.K].reshape(-1)
-                self.embedding_matrix[n, out_row] = window
-                self.flatten_embedding_matrix[flatten_out_row] = window
-                out_row += 1
-                flatten_out_row += 1
-        return self.embedding_matrix, self.flatten_embedding_matrix
+                window = self.Y[n, t:t + self.K].reshape(-1)
+                self.embedding_matrix[n, t] = window
+                self.flatten_embedding_matrix[flat_row] = window
+
+                if self.embedding_labels is not None:
+                    # label associated to this window = label at the window's last timepoint
+                    lbl = self.Y_labels[n, t + self.K - 1]
+                    self.embedding_labels[n, t] = lbl
+                    self.flatten_embedding_labels[flat_row] = lbl
+                flat_row += 1
+
 
     def compute_averages_embedding_chunk(self) -> (np.ndarray, np.ndarray):
         if self.Y.shape[2] == 2:
@@ -247,42 +297,6 @@ class EmbeddingBase:
             self.cluster_centers_ = self.flatten_embedding_matrix[self.indices[model.medoid_indices_]]
         return self.labels
 
-    def classify_trajectory(self, trajectory: np.ndarray) -> np.ndarray:
-        """Classify each point of a single trajectory into a cluster.
-
-        Parameters
-        ----------
-        trajectory : np.ndarray
-            A single trajectory of shape (T, d).
-
-        Returns
-        -------
-        np.ndarray
-            An array of cluster labels for each point in the trajectory.
-        """
-        if self.cluster_centers_ is None:
-            raise RuntimeError("Clustering must be performed first.")
-        
-        # Perform time-delay embedding on the trajectory
-        T, d = trajectory.shape
-        if d != self.D:
-            raise ValueError(f"Trajectory has wrong dimension {d}, expected {self.D}")
-        
-        L = T - self.K + 1
-        if L < 1:
-            raise ValueError("Trajectory is too short for the given embedding window K.")
-
-        embedded_trajectory = np.empty((L, self.K * self.D), dtype=float)
-        for t in range(L):
-            embedded_trajectory[t] = trajectory[t:t + self.K].reshape(-1)
-
-        # For each embedded vector, find the closest cluster center
-        from scipy.spatial.distance import cdist
-        distances = cdist(embedded_trajectory, self.cluster_centers_)
-        labels = np.argmin(distances, axis=1)
-        
-        return labels
-
     def pick_random_trajectory_in_cluster(self, cluster_id: int) -> NDArray[np.float64]:
         if self.labels is None:
             raise RuntimeError("Need the labels first.")
@@ -347,3 +361,5 @@ class EmbeddingBase:
         labels = np.argmin(distances, axis=1)
         
         return labels
+
+    def label_embedding(self):
