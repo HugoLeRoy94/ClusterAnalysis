@@ -3,6 +3,7 @@ from src.markov_analysis import Markov
 from typing import List, Optional, Sequence
 from scipy.spatial.distance import cdist
 import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view
 import pandas as pd
 from src.trajectory_utils import canonicalize_trajectory
 
@@ -20,120 +21,101 @@ class EmbeddingPosition(EmbeddingBase):
         self,
         data: pd.DataFrame,
         *,
-        columns: Sequence[str],              # absolute features for Y (e.g. speed, curvature)
-        columns_translated: Sequence[str],   # shifted features (e.g. x, y, z)
+        columns: Sequence[str],
+        columns_translated: Sequence[str],
         ID_NAME: str = "ID",
         n_trajectories: Optional[int] = None,
         n_windows: Optional[int] = None,
         rng: Optional[np.random.Generator] = None,
+        label_col: str = "move_type",
     ) -> None:
-        if data is None:
-            raise ValueError("EmbeddingPosition requires `data` (DataFrame).")
-        for c in list(columns) + list(columns_translated):
-            if c not in data.columns:
-                raise ValueError(f"Column '{c}' not found in DataFrame.")
-        if ID_NAME not in data.columns:
-            raise ValueError(f"`ID_NAME='{ID_NAME}'` not found in DataFrame.")
-
         self.columns_translated = tuple(columns_translated)
         self.ID_NAME = ID_NAME
+        self.n_windows = n_windows
 
-        # Select IDs (optionally subsample)
-        ids = data[ID_NAME].unique()
-        if n_trajectories is not None:
-            if rng is None:
-                rng = np.random.default_rng(42)
-            if n_trajectories > len(ids):
-                raise ValueError(f"n_trajectories={n_trajectories} > available IDs={len(ids)}.")
+        if n_trajectories:
+            ids = data[ID_NAME].drop_duplicates().to_numpy()
+            rng = rng or np.random.default_rng(42)
             ids = rng.choice(ids, size=int(n_trajectories), replace=False)
+            data = data[data[ID_NAME].isin(ids)]
 
-        subset = data[data[ID_NAME].isin(ids)]
+        # group without reordering IDs
+        groups = [g.sort_index() for _, g in data.groupby(ID_NAME, sort=False)]
 
+        # common T across abs and translated
+        T = min(min(len(g[columns]), len(g[columns_translated])) for g in groups)
+        T = int(T)
 
-        # Extract both sets of trajectories with same T_min
-        trajs_abs, trajs_trans, T_min = [], [], np.inf
-        for _, traj_df in subset.groupby(ID_NAME, sort=False):
-            traj_abs = traj_df.sort_index()[columns].values.astype(float)
-            traj_trans = traj_df.sort_index()[columns_translated].values.astype(float)
-            T_min = min(T_min, traj_abs.shape[0], traj_trans.shape[0])
-            trajs_abs.append(traj_abs)
-            trajs_trans.append(traj_trans)
+        Y_abs  = np.stack([g.loc[:, columns].to_numpy(float)[:T]            for g in groups], axis=0)
+        self.Y_tr   = np.stack([g.loc[:, columns_translated].to_numpy(float)[:T] for g in groups], axis=0)
+        Y_lab  = (np.stack([g[label_col].to_numpy(object)[:T] for g in groups], axis=0)
+                if label_col in data.columns else None)
 
-        T_min = int(T_min)
-        Y_abs = np.stack([traj[:T_min] for traj in trajs_abs])
-        Y_trans = np.stack([traj[:T_min] for traj in trajs_trans])
-        # Build aligned blocks with common T_min
-        #trajs_abs, trajs_trans = [], []
-        #T_min = np.inf
-        #for _, traj_df in subset.groupby(ID_NAME, sort=False):
-        #    arr_abs = traj_df[list(columns)].to_numpy(dtype=float)
-        #    arr_trans = traj_df[list(columns_translated)].to_numpy(dtype=float)
-        #    if arr_abs.size != 0:
-        #        trajs_abs.append(arr_abs)
-        #    if arr_trans.size != 0:
-        #        trajs_trans.append(arr_trans)
-        #    T_min = min(T_min, arr_abs.shape[0], arr_trans.shape[0])
-                        
-        #T_min = int(T_min)
-        #Y_abs = np.stack([a[:T_min] for a in trajs_abs], axis=0)          # (N, T, d_abs)
-        #Y_trans = np.stack([a[:T_min] for a in trajs_trans], axis=0)      # (N, T, d_trans)
-
-        # Store translated block and initialize base with Y_abs
-        self.Y_translated = Y_trans                                       # kept aligned with self.Y
+        # hand off to base with arrays only (no re-parse, labels preserved)
         super().__init__(
-            data=None,            # we pass Y directly to avoid re-parsing data
+            data=None,
             columns=tuple(columns),
             ID_NAME=ID_NAME,
-            n_trajectories=None,  # already applied
             Y=Y_abs,
+            Y_labels=Y_lab,
             n_windows=n_windows,
             rng=rng,
         )
-        
-        # Optionally, record the total feature dimension if you plan to concatenate later
-        # self.D is from Y_abs; add translated block dimensionality if useful downstream
-        self.D_total = self.D + Y_trans.shape[2]
-    def make_embedding(self, K: int) -> (np.ndarray, np.ndarray):
-        if K < 3 or K > self.T:
-            # minimum value of K for the SVD in canonicalize trajectory, where V the rotation matrix
-            # will have the dimension min(K,d).
-            raise ValueError("K must be in the range [3, T]")
 
+        # optional: total feature dimension if you concatenate later
+        self.D_total = self.D + self.Y_tr.shape[2]
+
+
+    def make_embedding(self, K: int):
+        """
+        Build windows with absolute coords + canonicalized translated coords.
+        Also build per-coordinate labels:
+        embedding_matrix:         (N, L, K*(d_abs+d_rel))
+        embedding_labels (object):(N, L, K*(d_abs+d_rel))  # label of each coord comes from its timepoint
+        """
         self.K = K
-        self.N = self.Y.shape[0]
-        self.L = self.T - K + 1
-        total_D = self.K * self.D_total
 
-        self.embedding_matrix = np.empty((self.N, self.L, total_D), dtype=float)
-        self.flatten_embedding_matrix = np.empty((self.N * self.L, total_D), dtype=float)
-
-        flatten_out_row = 0
+        if self.K > self.T:
+            raise ValueError("K must be in [1, T]")        
         
+
+        E = np.empty((self.N, self.T-self.K+1, self.D_total*self.K), dtype=float)
+        LBL = None
+        have_labels = getattr(self, "Y_labels", None) is not None
+        if have_labels:
+            if self.Y_labels.shape[1] != self.T:
+                print("reshape the Y_label data")
+                self.Y_labels = self.Y_labels[:, :self.T]
+            LBL = np.empty((self.N, self.T-self.K+1, self.K), dtype=object)
+
+        r = 0
         for n in range(self.N):
-            out_row = 0
-            for t in range(self.L):
-                # Absolute window (no shift)
-                #win_abs = self.Y[n, t:t + K].reshape(-1)
-                # Translated window (relative shift)
-                #win_rel = self.canonicalize_trajectory(self.Y_translated[n, t:t + K] ) # shape : (K,d)
-                #win_rel = win_rel.reshape(-1) # shape K*d
-                #full_window = np.concatenate([win_abs, win_rel])
+            for t0 in range(self.T-self.K+1):
+                # abs part
+                w_abs = self.Y[n, t0:t0+self.K].reshape(-1)  # (K*d_abs,)
+                # rel part (canonicalized per window)
+                w_rel = canonicalize_trajectory(self.Y_tr[n, t0:t0+self.K]).reshape(-1)  # (K*d_rel,)
+                w = np.concatenate([w_abs, w_rel], axis=0)  # (K*(d_abs+d_rel),)
+                E[n, t0] = w
 
-                # win_abs: (K, d_abs), win_rel: (K, d_rel)                
-                win_abs = self.Y[n, t:t + K].reshape(-1)                     # shape (K, d_abs)
-                win_rel = canonicalize_trajectory(self.Y_translated[n, t:t + K]).reshape(-1)  # shape (K, d_rel)
-                # Concatenate per-time-step: result is (K, d_abs + d_rel)
+                if have_labels:
+                    # per-timepoint labels -> per-coordinate labels
+                    LBL[n, t0] = self.Y_labels[n, t0:t0 + self.K]
 
-                # Flatten to shape (K*(d_abs + d_rel),)
-                full_window = np.concatenate([win_abs, win_rel])
+                r += 1
 
-                self.embedding_matrix[n, out_row] = full_window
-                self.flatten_embedding_matrix[flatten_out_row] = full_window
+        self.embedding_matrix = E
+        self.flatten_embedding_matrix = E.reshape(-1, self.D_total*self.K)
 
-                out_row += 1
-                flatten_out_row += 1
+        if have_labels:
+            self.embedding_labels = LBL
+            self.flatten_embedding_labels = LBL.reshape(-1, self.K)
+        else:
+            self.embedding_labels = None
+            self.flatten_embedding_labels = None
 
-        return self.embedding_matrix, self.flatten_embedding_matrix
+
+
     
     def classify_trajectory(self, trajectory_abs: Optional[np.ndarray] = None, trajectory_trans: Optional[np.ndarray] = None) -> np.ndarray:
         """Classify each point of a single trajectory into a cluster.
