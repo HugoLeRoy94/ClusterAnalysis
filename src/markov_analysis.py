@@ -132,6 +132,7 @@ class Markov(StochasticMatrix):
         rd = np.random.randint(0, 1000) / 1000.0
         self.state = np.searchsorted(cum_prob_array, rd, side="right")
         return self.state
+    
     def build_trajectory(self,T_tot:int)->np.ndarray:
         res = list()
         N_mkv_steps = T_tot//self.K
@@ -140,7 +141,6 @@ class Markov(StochasticMatrix):
         for step in range(N_mkv_steps):
             res.append(self.make_transition())
         return np.array(res)
-
 
     def _build_sub_model(self, subset_indices: np.ndarray) -> Optional[StochasticMatrix]:
         """
@@ -300,5 +300,5 @@ class Markov(StochasticMatrix):
         # When loop finishes, all remaining pending partitions are also final
         final_partitions.extend(pending_partitions)
         
-        print(f"Finished partitioning. Found {len(final_partitions)} macro-states.")
+        #print(f"Finished partitioning. Found {len(final_partitions)} macro-states.")
         return final_partitions
