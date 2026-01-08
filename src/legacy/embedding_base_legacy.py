@@ -1,75 +1,93 @@
 from __future__ import annotations
+
+from typing import List, Optional, Sequence
+from collections import defaultdict,Counter
+
 import numpy as np
 import pandas as pd
-from numpy.lib.stride_tricks import sliding_window_view
-from typing import Optional, Sequence, List, Union
 from numpy.typing import NDArray
-
 from sklearn.cluster import KMeans, MiniBatchKMeans, SpectralClustering
+#from sklearn_extra.cluster import KMedoids
+#from pyclustering.cluster.kmedoids import kmedoids
+#from pyclustering.utils.metric import distance_metric, type_metric
 from scipy.spatial.distance import squareform
 from src.distance import compute_condensed_distance_matrix
 from scipy.spatial.distance import cdist
 from numpy.lib.stride_tricks import sliding_window_view
 
 
+import umap
+
+__all__ = ["EmbeddingBase"]
+
 class EmbeddingBase:
+    """
+    EmbeddingBase
+    -------------
+    Initialize from either:
+      (A) a tidy pandas DataFrame with one row per timepoint and a column holding
+          the trajectory identifier (e.g. "ID"), plus position columns (e.g. ["x","y","z"]);
+      (B) a prebuilt NumPy array Y with shape (N, T, d), where N = #trajectories,
+          T = #timepoints per trajectory (assumed equal across trajectories),
+          and d = dimensionality (2 or 3 typically).
+
+    Use case (A) when your raw data is tabular and you want this class to stack
+    trajectories into a uniform Y array. Use case (B) when you already have Y.
+    """
+
     def __init__(
         self,
         data: Optional[pd.DataFrame] = None,
         *,
-        columns: Optional[Sequence[str]] = None,
+        columns: Optional[Sequence[str]] = None,   # e.g. ("x","y","z")
         ID_NAME: str = "ID",
         label_col: Optional[str] = "move_type",
         n_trajectories: Optional[int] = None,
-        Y: Optional[Union[List[np.ndarray], np.ndarray]] = None,
-        Y_labels: Optional[Union[List[np.ndarray], np.ndarray]] = None,
+        Y: Optional[np.ndarray] = None,
+        Y_labels: Optional[np.ndarray] = None,
         n_windows: Optional[int] = None,
         rng: Optional[np.random.Generator] = None,
         embedding_matrix: Optional[np.ndarray] = None,
     ) -> None:
-        # Core placeholders
+        # core placeholders (kept compact)
         self.K = None
-        self.embedding_matrix = None         # Now a List[np.ndarray]
-        self.flatten_embedding_matrix = None # np.ndarray (stacked)
-        self.embedding_labels = None         # Now a List[np.ndarray]
-        self.flatten_embedding_labels = None # np.ndarray (stacked)
-        
+        self.n_clusters = None
+        self.embedding_matrix = None
+        self.flatten_embedding_matrix = None
+        self.embedding_labels = None
+        self.flatten_embedding_labels = None
+        self.labels = None
+        self.indices = None
+        self.distance_matrix = None
+        self.cluster_centers_ = None
+
+        self.Y = None
+        self.Y_labels = None
+        self.T = None
+        self.N = None
+        self.D = None
+
         self.columns = tuple(columns) if columns is not None else None
         self.ID_NAME = ID_NAME
         self.n_windows = n_windows
 
-        # --- Direct array path ---
+        # --- Direct array path (preferred by subclasses like EmbeddingPosition) ---
         if Y is not None:
-            # Check if Y is a list (ragged) or a dense array
-            if isinstance(Y, list):
-                self.Y = [np.asarray(y, dtype=float) for y in Y]
-                self.N = len(self.Y)
-                # T is now a list of lengths
-                self.T = [arr.shape[0] for arr in self.Y]
-                self.D = self.Y[0].shape[1] if self.N > 0 else 0
-            else:
-                # Fallback for dense input, convert to list for consistency
-                arr = np.asarray(Y, dtype=float)
-                self.N, t_dim, self.D = arr.shape
-                self.Y = [arr[i] for i in range(self.N)]
-                self.T = [t_dim] * self.N
-
+            Y = np.asarray(Y, dtype=float)
+            self.N, self.T, self.D = Y.shape
+            self.Y = Y
             if self.columns is None:
                 self.columns = tuple(f"x{j}" for j in range(self.D))
-            
-            # Handle Labels similar to Y
-            self.Y_labels = None
             if Y_labels is not None:
-                if isinstance(Y_labels, list):
-                    self.Y_labels = [np.asarray(l, dtype=object) for l in Y_labels]
-                else:
-                    arr = np.asarray(Y_labels, dtype=object)
-                    self.Y_labels = [arr[i] for i in range(arr.shape[0])]
+                arr = np.asarray(Y_labels, dtype=object)
+                # lightweight shape guard
+                if arr.shape[:2] == (self.N, self.T):
+                    self.Y_labels = arr
             return
 
-        # --- DataFrame path ---
+        # --- DataFrame path (build Y and optional labels) ---
         if data is None or self.columns is None:
-            raise ValueError("Provide either Y or DataFrame data+columns.")
+            raise ValueError("Provide either Y (and optional Y_labels) or DataFrame data+columns.")
 
         df = data
         if n_trajectories:
@@ -78,81 +96,63 @@ class EmbeddingBase:
             ids = rng.choice(ids, size=int(n_trajectories), replace=False)
             df = df[df[ID_NAME].isin(ids)]
 
-        # Group WITHOUT enforcing min(T)
         groups = [g for _, g in df.groupby(ID_NAME, sort=False)]
-        
-        # Store as LIST of arrays
-        self.Y = [g.loc[:, self.columns].to_numpy(float) for g in groups]
-        self.N = len(self.Y)
-        self.T = [arr.shape[0] for arr in self.Y] # List of lengths
-        self.D = self.Y[0].shape[1] if self.N > 0 else 0
+        T_min = min(len(g) for g in groups)
+        T = int(T_min)
+
+        self.Y = np.stack([g.loc[:, self.columns].to_numpy(float)[:T] for g in groups], axis=0)
+        self.N, self.T, self.D = self.Y.shape
 
         if label_col and (label_col in df.columns):
-            self.Y_labels = [g[label_col].to_numpy(object) for g in groups]
+            self.Y_labels = np.stack([g[label_col].to_numpy(object)[:T] for g in groups], axis=0)
         else:
             self.Y_labels = None
 
+
+
+
     def make_embedding(self, K: int = 1, embedding_matrix: Optional[np.ndarray] = None):
         """
-        Builds embedding for variable length trajectories.
+        Build K-delay windows:
+        self.embedding_matrix          -> (N, L, K*D)
+        self.flatten_embedding_matrix  -> (N*L, K*D)
+        self.embedding_labels          -> (N, L)   (label at t+K-1), if Y_labels available
+        self.flatten_embedding_labels  -> (N*L,)   (optional)
+        Returns (embedding_matrix, flatten_embedding_matrix).
         """
         if embedding_matrix is not None:
-            # Legacy handling for pre-computed dense matrix
-            self.embedding_matrix = [embedding_matrix] # Wrap in list
-            self.flatten_embedding_matrix = embedding_matrix.reshape(-1, embedding_matrix.shape[-1])
+            self.embedding_matrix = np.asarray(embedding_matrix, float)
+            self.K = int(K)
+            self.N, self.L = self.embedding_matrix.shape[:2]
+            self.D = self.embedding_matrix.shape[2] // self.K
+            self.T = self.L + self.K - 1
+            self.flatten_embedding_matrix = self.embedding_matrix.reshape(-1, self.embedding_matrix.shape[2])
+            self.embedding_labels = None
+            self.flatten_embedding_labels = None
             return self.embedding_matrix, self.flatten_embedding_matrix
 
         if self.Y is None:
             raise RuntimeError("Y is not set.")
-        
         self.K = int(K)
-        
-        batch_matrices = []
-        batch_labels = []
+        if not (1 <= self.K <= self.T):
+            raise ValueError("K must be in [1, T].")
 
-        # Iterate over each trajectory individually
-        for n in range(self.N):
-            y_curr = self.Y[n]
-            t_curr = len(y_curr)
-            
-            # Skip trajectories shorter than window size
-            if t_curr < self.K:
-                # Optional: append empty array or handle strictly
-                continue
+        # Windows over time axis (vectorized): (N, L, K, D) -> (N, L, K*D)
+        self.L = self.T - self.K + 1
+        win = sliding_window_view(self.Y, self.K, axis=1)           # (N, L, K, D)
+        self.embedding_matrix = win.reshape(self.N, self.L, self.K * self.D)
+        self.flatten_embedding_matrix = self.embedding_matrix.reshape(-1, self.K * self.D)
 
-            # Vectorized windowing for this trajectory
-            # shape: (L, K, D)
-            win = sliding_window_view(y_curr, self.K, axis=0) 
-            
-            # Flatten the K*D dimension: (L, K*D)
-            L_curr = win.shape[0]
-            flat_win = win.reshape(L_curr, self.K * self.D)
-            
-            batch_matrices.append(flat_win)
-
-            # Handle Labels
-            if self.Y_labels is not None:
-                lbl_curr = self.Y_labels[n]
-                # Label is typically the last point in the window
-                batch_labels.append(lbl_curr[self.K - 1:])
-
-        # Store structured results (List of Arrays)
-        self.embedding_matrix = batch_matrices
-        
-        # Store flattened results (Single Stacked Array)
-        if batch_matrices:
-            self.flatten_embedding_matrix = np.concatenate(batch_matrices, axis=0)
-        else:
-            self.flatten_embedding_matrix = np.empty((0, self.K * self.D))
-
-        if self.Y_labels is not None and batch_labels:
-            self.embedding_labels = batch_labels
-            self.flatten_embedding_labels = np.concatenate(batch_labels, axis=0)
+        # Window labels (label of last timepoint in each window)
+        if self.Y_labels is not None:
+            self.embedding_labels = self.Y_labels[:, self.K - 1:]    # (N, L)
+            self.flatten_embedding_labels = self.embedding_labels.reshape(-1)
         else:
             self.embedding_labels = None
             self.flatten_embedding_labels = None
 
         return self.embedding_matrix, self.flatten_embedding_matrix
+
 
     def compute_averages_embedding_chunk(self) -> (np.ndarray, np.ndarray):
         if self.Y.shape[2] == 2:

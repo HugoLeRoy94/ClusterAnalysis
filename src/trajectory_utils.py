@@ -7,7 +7,7 @@ from scipy.interpolate import CubicSpline
 from scipy.spatial.transform import Rotation as R
 
 
-def count_transitions(labels: np.ndarray, n_clusters: int, tau: int, nsample: int, TmKp1: int) -> np.ndarray:
+def count_transitions(labels: np.ndarray, n_clusters: int, tau: int) -> np.ndarray:
     """
     Return the raw transition count matrix C (without normalisation).
     Notice that we do not concatenate the pieces of trajectories one after the other
@@ -17,10 +17,10 @@ def count_transitions(labels: np.ndarray, n_clusters: int, tau: int, nsample: in
     TmKp1 : T - K +1
     """
     C = np.zeros((n_clusters, n_clusters), dtype=float)
-    for n in range(nsample):            
-        for start in range(TmKp1 - tau):
-            i, j = labels[n*TmKp1+start], labels[n*TmKp1+start + tau]
-            C[i, j] += 1.0
+    for trajectory in labels:
+        for t in range(trajectory.shape[0] - tau):
+            i,j = trajectory[t],trajectory[t+tau]
+            C[i,j] += 1
     return C
 
 def stationary_distribution(P: NDArray[np.float64], tol: float = 1e-12, maxiter: int = 10000) -> NDArray[np.float64]:
@@ -175,67 +175,57 @@ def embed_move_type(data : pd.DataFrame, K:int, Nsamples: Optional[int] = None,I
             flatten_out_row+=1
     return embedding_matrix
 
+import itertools
+
 def canonicalize_trajectory(coords, *, return_rotation=False, tol=1e-12):
     """
-    Rotate `coords` (K×3) into a unique canonical frame.
+    Rotate `coords` (K×D) into a unique canonical frame.
+    Works for 2D (D=2) and 3D (D=3).
+    
     Any rigid-body rotation + translation of the same trajectory
     maps to the *identical* output.
-
-    Algorithm
-    ---------
-    1.  centre at the centroid
-    2.  PCA → eigenvectors V (columns)
-    3.  for each axis j:                       # sign disambiguation
-        m3 = Σ (x_j')³   (third central moment)
-        if |m3| < tol use   Σ x_j'² x_{j+1}'
-        flip V[:,j] if m3 < 0
-    4.  make the basis right-handed (det = +1)
-    5.  rotated = centred @ V
-
-    Returns
-    -------
-    canon : (K,3)  canonical coordinates (centroid at the origin)
-    R      : (3,3) rotation matrix  (only if `return_rotation=True`)
     """
+    X = np.asarray(coords, dtype=float)
+    K, D = X.shape                     # Detect dimensionality (2 or 3)
+    
+    # 1. Centre at centroid
+    C = X - X.mean(axis=0)
+    
+    # 2. PCA -> eigenvectors V
+    # Vt is (D, D), V is (D, D)
+    _, _, Vt = np.linalg.svd(C, full_matrices=False)
+    V = Vt.T
 
-    X   = np.asarray(coords, dtype=float)
-    C   = X - X.mean(axis=0)               # 1
-    _,  _, Vt = np.linalg.svd(C, full_matrices=False)
-    V   = Vt.T                             # 2
-
-    Y   = C @ V                            # projections for moments
-    for j in range(3):                     # 3
+    Y = C @ V
+    
+    # 3. Sign disambiguation (loop over D dimensions)
+    for j in range(D):
         m3 = (Y[:, j] ** 3).sum()
-        if abs(m3) < tol:                  # nearly symmetric
-            k = (j + 1) % 3
+        if abs(m3) < tol:
+            k = (j + 1) % D            # Wrap around (0->1, 1->2 or 1->0)
             m3 = (Y[:, j]**2 * Y[:, k]).sum()
         if m3 < 0:
             V[:, j] *= -1
             Y[:, j] *= -1
 
-    if np.linalg.det(V) < 0:               # 4
-        V[:, 2] *= -1
-        Y[:, 2] *= -1
+    # 4. Make basis right-handed (det = +1)
+    if np.linalg.det(V) < 0:
+        V[:, -1] *= -1                 # Flip last axis (generic for 2D/3D)
+        Y[:, -1] *= -1
 
-    canon = Y                               # 5
-    # Step 6: chiral disambiguation via lexicographic minimization
-    mirrors = np.array([
-        [ 1,  1,  1],
-        [-1,  1,  1],
-        [ 1, -1,  1],
-        [ 1,  1, -1],
-        [-1, -1,  1],
-        [-1,  1, -1],
-        [ 1, -1, -1],
-        [-1, -1, -1]
-    ])  # shape (8, 3)
+    canon = Y
+    
+    # Step 6: Chiral disambiguation via lexicographic minimization
+    # Generate mirrors dynamically for D dimensions (4 for 2D, 8 for 3D)
+    mirrors = np.array(list(itertools.product([1, -1], repeat=D)))  # shape (2^D, D)
 
-    mirrored = np.einsum('ij,kj->kij', canon, mirrors)  # shape (8, K, 3)
+    # (2^D, D) x (K, D) -> (2^D, K, D) via broadcasting/einsum
+    # Einstein sum: 'ij,kj->kij' (mirrors[i, j] * canon[k, j])
+    mirrored = np.einsum('ij,kj->kij', canon, mirrors)
 
-    flat = mirrored.reshape(8, -1)  # shape (8, 3K)
+    flat = mirrored.reshape(len(mirrors), -1)  # shape (2^D, K*D)
     best_index = np.lexsort(flat.T)[0]
     canon = mirrored[best_index]
-
 
     return (canon, V) if return_rotation else canon
 

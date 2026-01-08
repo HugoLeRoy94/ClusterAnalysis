@@ -95,7 +95,8 @@ class Markov(StochasticMatrix):
         if embedding.labels is None:
             raise RuntimeError("Embedding must have cluster labels.")
         
-        self.labels = embedding.labels
+        self.labels = embedding.labels        
+
         self.n_clusters = embedding.n_clusters
         self.Nsample = embedding.N
         self.T = embedding.T
@@ -104,21 +105,33 @@ class Markov(StochasticMatrix):
         self.tau = tau
         self.state: Optional[int] = None
 
-        self.make_transition_matrix()
+        self.make_transition_matrix(embedding)
 
-    def make_transition_matrix(self) -> NDArray[np.float64]:
+    def make_transition_matrix(self,embedding: EmbeddingBase) -> NDArray[np.float64]:
+
+        # store the shape of the embedding list to compute the transition correctly:
+        embedding_shape = np.zeros(embedding.embedding_matrix.__len__(),dtype=int)
+        for idx in range(embedding_shape.__len__()):
+            embedding_shape[idx] = embedding.embedding_matrix[idx].shape[0]
+        reshaped_labels = list()
+        idx = 0
+        for n in range(embedding_shape.shape[0]):
+            reshaped_labels.append(self.labels[idx:idx+embedding_shape[n]])
+            idx += embedding_shape[n]
+
         C = count_transitions(
-            self.labels,
+            reshaped_labels,
             self.n_clusters,
-            tau=self.tau,
-            nsample=self.Nsample,
-            TmKp1=self.T - self.K + 1,
+            tau=self.tau
+            #nsample=self.Nsample,
+            #TmKp1=self.T - self.K + 1,
         )
         self.C = C
         with np.errstate(divide="ignore", invalid="ignore"):
             P = C / C.sum(axis=1, keepdims=True)
         P[np.isnan(P)] = 0.0
         super().__init__(P)
+    
     def initialize_state(self):
         self.state = np.random.randint(0, self.n_clusters)
     
