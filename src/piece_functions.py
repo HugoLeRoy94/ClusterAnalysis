@@ -134,6 +134,7 @@ def persistent_random_walk(start, n_steps, step_size=1.0, turn_std=np.pi / 10,di
 
 def generate_random_trajectory(total_steps, step_size=1.0,
                                   mvt_types=['straight', 'helix'],
+                                  probabilities=None, # Added parameter
                                   mvt_args={}):
 
     move_functions = {
@@ -143,13 +144,20 @@ def generate_random_trajectory(total_steps, step_size=1.0,
         'persistent_random_walk': persistent_random_walk
     }
 
+    if probabilities is not None:
+        if len(probabilities) != len(mvt_types):
+            raise ValueError("Length of probabilities must match length of mvt_types")
+
     remaining_steps = total_steps
     segments = []
     move_names = []
     last_point = (0.0, 0.0, 0.0)
 
     while remaining_steps > 0:
-        move = random.choice(mvt_types)        
+        if probabilities is not None:
+            move = random.choices(mvt_types, weights=probabilities, k=1)[0]
+        else:
+            move = random.choice(mvt_types)        
 
         # Merge base arguments with override from mvt_args
         kwargs = mvt_args.get(move, {}).copy()
