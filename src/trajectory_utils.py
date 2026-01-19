@@ -7,7 +7,7 @@ from scipy.interpolate import CubicSpline
 from scipy.spatial.transform import Rotation as R
 
 
-def count_transitions(labels: np.ndarray, n_clusters: int, tau: int) -> np.ndarray:
+def count_transitions(labels: List[NDArray[np.int_]], n_clusters: int, tau: int) -> np.ndarray:
     """
     Return the raw transition count matrix C (without normalisation).
     Notice that we do not concatenate the pieces of trajectories one after the other
@@ -18,7 +18,7 @@ def count_transitions(labels: np.ndarray, n_clusters: int, tau: int) -> np.ndarr
     """
     C = np.zeros((n_clusters, n_clusters), dtype=float)
     for trajectory in labels:
-        for t in range(trajectory.shape[0] - tau):
+        for t in range(trajectory.__len__() - tau):
             i,j = trajectory[t],trajectory[t+tau]
             C[i,j] += 1
     return C

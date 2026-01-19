@@ -11,6 +11,8 @@ from src.distance import compute_condensed_distance_matrix
 from scipy.spatial.distance import cdist
 from numpy.lib.stride_tricks import sliding_window_view
 
+import umap
+
 
 class EmbeddingBase:
     def __init__(
@@ -33,7 +35,8 @@ class EmbeddingBase:
         self.flatten_embedding_matrix = None # np.ndarray (stacked)
         self.embedding_labels = None         # Now a List[np.ndarray]
         self.flatten_embedding_labels = None # np.ndarray (stacked)
-        
+        self.indices = None
+
         self.columns = tuple(columns) if columns is not None else None
         self.ID_NAME = ID_NAME
         self.n_windows = n_windows

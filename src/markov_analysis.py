@@ -1,4 +1,5 @@
 from typing import Optional,List
+from src.cluster import Cluster
 import numpy as np
 from numpy.typing import NDArray
 from src.trajectory_utils import (
@@ -91,40 +92,19 @@ class StochasticMatrix:
 
 
 class Markov(StochasticMatrix):
-    def __init__(self, embedding: EmbeddingBase, tau: int = 1) -> None:
-        if embedding.labels is None:
-            raise RuntimeError("Embedding must have cluster labels.")
-        
-        self.labels = embedding.labels        
-
-        self.n_clusters = embedding.n_clusters
-        self.Nsample = embedding.N
-        self.T = embedding.T
-        self.K = embedding.K
-            
+    def __init__(self, traj_labels: List[NDArray[np.int_]], n_clusters: int, tau: int = 1) -> None:
+        self.labels = traj_labels
+        self.n_clusters = n_clusters
         self.tau = tau
         self.state: Optional[int] = None
 
-        self.make_transition_matrix(embedding)
+        self.make_transition_matrix()
 
-    def make_transition_matrix(self,embedding: EmbeddingBase) -> NDArray[np.float64]:
-
-        # store the shape of the embedding list to compute the transition correctly:
-        embedding_shape = np.zeros(embedding.embedding_matrix.__len__(),dtype=int)
-        for idx in range(embedding_shape.__len__()):
-            embedding_shape[idx] = embedding.embedding_matrix[idx].shape[0]
-        reshaped_labels = list()
-        idx = 0
-        for n in range(embedding_shape.shape[0]):
-            reshaped_labels.append(self.labels[idx:idx+embedding_shape[n]])
-            idx += embedding_shape[n]
-
+    def make_transition_matrix(self) -> None:
         C = count_transitions(
-            reshaped_labels,
+            self.labels,
             self.n_clusters,
             tau=self.tau
-            #nsample=self.Nsample,
-            #TmKp1=self.T - self.K + 1,
         )
         self.C = C
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -148,7 +128,9 @@ class Markov(StochasticMatrix):
     
     def build_trajectory(self,T_tot:int)->np.ndarray:
         res = list()
-        N_mkv_steps = T_tot//self.K
+        # This K is not defined anymore, I will set it to 1, but it should be fixed.
+        # N_mkv_steps = T_tot//self.K 
+        N_mkv_steps = T_tot
         self.initialize_state()
         res.append(self.state)
         for step in range(N_mkv_steps):
@@ -193,7 +175,7 @@ class Markov(StochasticMatrix):
              
         return model
             
-    def recursive_partition(self, n_states: int, use_tr: bool = True) -> List[np.ndarray]:
+    def recursive_partition(self, n_states: int, use_tr: bool = True, reduced_system:Optional[np.ndarray] = None) -> List[np.ndarray]:
         """
         Iteratively partitions the state space into N macro-states using
         spectral bisection based on metastability.
@@ -206,6 +188,9 @@ class Markov(StochasticMatrix):
             Whether to use the reversibilized matrix (True) or the
             original transition matrix (False) for finding the slow mode.
             Default is True.
+        reduced_system: np.ndaray, optional
+            If an array is passed, it uses only the index passed
+            to perform a partition.
 
         Returns
         -------
@@ -223,8 +208,10 @@ class Markov(StochasticMatrix):
         
         # This list holds macro-states that are *pending* splitting.
         # Start with the full set of all original cluster indices.
-        pending_partitions: List[np.ndarray] = [np.arange(n_clusters)]
-        
+        if reduced_system is None:
+            pending_partitions: List[np.ndarray] = [np.arange(n_clusters)]
+        else:
+            pending_partitions: List[np.ndarray] = [reduced_system]
         while len(final_partitions) + len(pending_partitions) < n_states:
             if not pending_partitions:
                 print(f"Stopping partition: No more splittable partitions. Found {len(final_partitions)} states.")
@@ -315,3 +302,41 @@ class Markov(StochasticMatrix):
         
         #print(f"Finished partitioning. Found {len(final_partitions)} macro-states.")
         return final_partitions
+
+class MarkovFromEmbedding(Markov):
+    def __init__(self, embedding: EmbeddingBase, tau: int = 1) -> None:
+        if embedding.labels is None:
+            raise RuntimeError("Embedding must have cluster labels.")
+        
+        labels = embedding.labels
+        n_clusters = embedding.n_clusters
+
+        # store the shape of the embedding list to compute the transition correctly:
+        embedding_shape = np.zeros(len(embedding.embedding_matrix),dtype=int)
+        for idx in range(len(embedding.embedding_matrix)):
+            embedding_shape[idx] = embedding.embedding_matrix[idx].shape[0]
+        
+        reshaped_labels = []
+        current_pos = 0
+        for length in embedding_shape:
+            reshaped_labels.append(labels[current_pos : current_pos + length])
+            current_pos += length
+        
+        super().__init__(reshaped_labels, n_clusters, tau)
+        self.K = embedding.K
+
+class MultiMarkov:
+    def __init__(self, cluster: Cluster, tau: int = 1) -> None:
+        self.models = []
+        for traj_group in cluster.labels:
+            model = Markov(traj_group, cluster.n_clusters, tau)
+            self.models.append(model)
+
+    def get_stochastic_matrices(self) -> List[NDArray[np.float64]]:
+        return [model.P for model in self.models]
+
+    def __getitem__(self, index: int) -> Markov:
+        return self.models[index]
+
+    def __len__(self) -> int:
+        return len(self.models)
