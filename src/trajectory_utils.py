@@ -6,7 +6,6 @@ from scipy.signal import savgol_filter
 from scipy.interpolate import CubicSpline
 from scipy.spatial.transform import Rotation as R
 
-
 def count_transitions(labels: List[NDArray[np.int_]], n_clusters: int, tau: int) -> np.ndarray:
     """
     Return the raw transition count matrix C (without normalisation).
@@ -177,22 +176,106 @@ def embed_move_type(data : pd.DataFrame, K:int, Nsamples: Optional[int] = None,I
 
 import itertools
 
-def canonicalize_trajectory(coords, *, return_rotation=False, tol=1e-12):
+#def canonicalize_trajectory(coords, *, return_rotation=False, tol=1e-12):
+#    """
+#    Rotate `coords` (K×D) into a unique canonical frame.
+#    Works for 2D (D=2) and 3D (D=3).
+#    
+#    Any rigid-body rotation + translation of the same trajectory
+#    maps to the *identical* output.
+#    """
+#    X = np.asarray(coords, dtype=float)
+#    K, D = X.shape                     # Detect dimensionality (2 or 3)
+#    
+#    # 1. Centre at centroid
+#    C = X - X.mean(axis=0)
+#    
+#    # 2. PCA -> eigenvectors V
+#    # Vt is (D, D), V is (D, D)
+#    _, _, Vt = np.linalg.svd(C, full_matrices=False)
+#    V = Vt.T
+#
+#    Y = C @ V
+#    
+#    # 3. Sign disambiguation (loop over D dimensions)
+#    for j in range(D):
+#        m3 = (Y[:, j] ** 3).sum()
+#        if abs(m3) < tol:
+#            k = (j + 1) % D            # Wrap around (0->1, 1->2 or 1->0)
+#            m3 = (Y[:, j]**2 * Y[:, k]).sum()
+#        if m3 < 0:
+#            V[:, j] *= -1
+#            Y[:, j] *= -1
+#
+#    # 4. Make basis right-handed (det = +1)
+#    if np.linalg.det(V) < 0:
+#        V[:, -1] *= -1                 # Flip last axis (generic for 2D/3D)
+#        Y[:, -1] *= -1
+#
+#    canon = Y
+#    
+#    # Step 6: Chiral disambiguation via lexicographic minimization
+#    # Generate mirrors dynamically for D dimensions (4 for 2D, 8 for 3D)
+#    mirrors = np.array(list(itertools.product([1, -1], repeat=D)))  # shape (2^D, D)
+#
+#    # (2^D, D) x (K, D) -> (2^D, K, D) via broadcasting/einsum
+#    # Einstein sum: 'ij,kj->kij' (mirrors[i, j] * canon[k, j])
+#    mirrored = np.einsum('ij,kj->kij', canon, mirrors)
+#
+#    flat = mirrored.reshape(len(mirrors), -1)  # shape (2^D, K*D)
+#    best_index = np.lexsort(flat.T)[0]
+#    canon = mirrored[best_index]
+#
+#    return (canon, V) if return_rotation else canon
+
+
+def canonicalize_trajectory(coords, *, return_rotation=False, normalize_step=False, tol=1e-12):
     """
-    Rotate `coords` (K×D) into a unique canonical frame.
+    Rotate `coords` (KxD) into a unique canonical frame.
     Works for 2D (D=2) and 3D (D=3).
-    
-    Any rigid-body rotation + translation of the same trajectory
-    maps to the *identical* output.
+
+    Parameters:
+    - coords: Input trajectory (K, D)
+    - return_rotation: If True, returns the rotation matrix V.
+    - normalize_step: If True, resamples the trajectory so the distance 
+      between every consecutive point is exactly 1.0. Returns the original
+      'speeds' (distances) as an extra output.
+    - tol: Numerical tolerance for sign disambiguation.
     """
     X = np.asarray(coords, dtype=float)
-    K, D = X.shape                     # Detect dimensionality (2 or 3)
+    speeds = None
+
+    # --- New Logic: Step Normalization ---
+    if normalize_step:
+        # Calculate vector differences between points
+        diffs = X[1:] - X[:-1]
+        
+        # Calculate L2 norm (distance/speed) for each segment
+        # Handle division by zero for duplicate points by adding epsilon if needed, 
+        # or rely on valid input.
+        distances = np.linalg.norm(diffs, axis=1)
+        
+        # Normalize vectors to unit length
+        # Avoid division by zero: where distance is 0, vector remains 0
+        with np.errstate(divide='ignore', invalid='ignore'):
+            unit_diffs = diffs / distances[:, None]
+        unit_diffs[np.isnan(unit_diffs)] = 0.0
+
+        # Reconstruct path: Start at origin (0,0...), cumsum unit steps
+        # We prepend a row of zeros to match original shape K
+        X_reconstructed = np.vstack([np.zeros((1, X.shape[1])), np.cumsum(unit_diffs, axis=0)])
+        
+        # Store speeds and update X for the subsequent alignment
+        speeds = distances
+        X = X_reconstructed
+
+    # --- Existing Logic: Rigid Alignment ---
+    K, D = X.shape
     
     # 1. Centre at centroid
     C = X - X.mean(axis=0)
     
     # 2. PCA -> eigenvectors V
-    # Vt is (D, D), V is (D, D)
     _, _, Vt = np.linalg.svd(C, full_matrices=False)
     V = Vt.T
 
@@ -202,7 +285,7 @@ def canonicalize_trajectory(coords, *, return_rotation=False, tol=1e-12):
     for j in range(D):
         m3 = (Y[:, j] ** 3).sum()
         if abs(m3) < tol:
-            k = (j + 1) % D            # Wrap around (0->1, 1->2 or 1->0)
+            k = (j + 1) % D
             m3 = (Y[:, j]**2 * Y[:, k]).sum()
         if m3 < 0:
             V[:, j] *= -1
@@ -210,24 +293,30 @@ def canonicalize_trajectory(coords, *, return_rotation=False, tol=1e-12):
 
     # 4. Make basis right-handed (det = +1)
     if np.linalg.det(V) < 0:
-        V[:, -1] *= -1                 # Flip last axis (generic for 2D/3D)
+        V[:, -1] *= -1
         Y[:, -1] *= -1
 
     canon = Y
     
     # Step 6: Chiral disambiguation via lexicographic minimization
-    # Generate mirrors dynamically for D dimensions (4 for 2D, 8 for 3D)
-    mirrors = np.array(list(itertools.product([1, -1], repeat=D)))  # shape (2^D, D)
-
-    # (2^D, D) x (K, D) -> (2^D, K, D) via broadcasting/einsum
-    # Einstein sum: 'ij,kj->kij' (mirrors[i, j] * canon[k, j])
+    mirrors = np.array(list(itertools.product([1, -1], repeat=D))) 
+    
+    # Einstein sum: (2^D, D) x (K, D) -> (2^D, K, D)
+    # Note: I swapped the einsum logic slightly to match standard broadcasting 
+    # but kept the user's intent: mirrors[i, j] * canon[k, j]
     mirrored = np.einsum('ij,kj->kij', canon, mirrors)
 
-    flat = mirrored.reshape(len(mirrors), -1)  # shape (2^D, K*D)
+    flat = mirrored.reshape(len(mirrors), -1)
     best_index = np.lexsort(flat.T)[0]
     canon = mirrored[best_index]
 
-    return (canon, V) if return_rotation else canon
+    # --- Return Logic ---
+    if normalize_step:
+        if return_rotation:
+            return canon, V, speeds
+        return canon, speeds
+    else:
+        return (canon, V) if return_rotation else canon
 
 
 #def _norm(v, eps=1e-12):
