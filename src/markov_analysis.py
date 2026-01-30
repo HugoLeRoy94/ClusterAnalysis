@@ -44,6 +44,10 @@ class StochasticMatrix:
         # sort both with the same rule
         idx_r = _sort_idx(vals_r)
         idx_l = _sort_idx(vals_l)
+
+        self.eigvals = np.real(vals_r[idx_r])
+        self.l_eigvals = np.real(vals_l[idx_r])
+
         self.right_eigvecs = np.real(vecs_r[:, idx_r]) # columns = right eigenvectors
         self.left_eigvecs  = np.real(vecs_l[:, idx_l]) # columns = left  eigenvectors
         # convenience: slow modes exclude λ≈1 (last after this sorting)
@@ -272,6 +276,7 @@ class Markov(StochasticMatrix):
             # Check if split is meaningful (metastability > 0)
             if min_meta[best_idx] <= 1e-9: # Use a small epsilon
                 print(f"No meaningful split found (max min-metastability <= 0). Treating partition as final.")
+                print(min_meta)
                 final_partitions.append(current_partition_indices)
                 continue
 

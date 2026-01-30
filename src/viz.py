@@ -330,3 +330,23 @@ def use_mpl_scatter_density(
     ax.set_yscale(yscale)
 
     return ax
+def zoom_out(ax, gamma):
+    # 1. Get current limits
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    
+    # 2. Calculate current width and height
+    width = xmax - xmin
+    height = ymax - ymin
+    
+    # 3. Calculate new center
+    center_x = (xmin + xmax) / 2
+    center_y = (ymin + ymax) / 2
+    
+    # 4. Determine new widths (scaled by gamma)
+    new_width = width * gamma
+    new_height = height * gamma
+    
+    # 5. Set new limits relative to center
+    ax.set_xlim([center_x - new_width / 2, center_x + new_width / 2])
+    ax.set_ylim([center_y - new_height / 2, center_y + new_height / 2])

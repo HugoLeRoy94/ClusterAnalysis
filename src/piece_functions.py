@@ -19,7 +19,7 @@ def straight_line(start, n_steps, step=1.0,distrib='deterministic'):
     return x, y, z
 
 
-def helix(start, n_steps, radius=5, pitch=1.0, clockwise=True, step=1.0,distrib='deterministic'):
+def helix(start, n_steps, radius=5, pitch=1.0, clockwise=True, step=1.0,distrib='deterministic',axis=None):
     if distrib == 'gaussian':
         n_steps = int(np.max(1,np.random.normal(loc=n_steps,scale=np.sqrt(n_steps))))
     elif distrib=='uniform':
@@ -33,18 +33,22 @@ def helix(start, n_steps, radius=5, pitch=1.0, clockwise=True, step=1.0,distrib=
     helix_coords = np.stack((x, y, z), axis=1)
 
     # 2. Generate a random unit vector (axis of the helix)
-    rand_axis = np.random.normal(size=3)
-    rand_axis /= np.linalg.norm(rand_axis)
-
-    # 3. Compute rotation from z-axis to rand_axis
+    if axis is None:
+        rand_axis = np.random.normal(size=3)
+        rand_axis /= np.linalg.norm(rand_axis)
+        axis = rand_axis
+    else:
+        # make sure it's normalized
+        axis /=np.linalg.norm(axis)
+    # 3. Compute rotation from z-axis to axis
     z_axis = np.array([0, 0, 1])
-    if np.allclose(rand_axis, z_axis):
+    if np.allclose(axis, z_axis):
         R_align = np.eye(3)
-    elif np.allclose(rand_axis, -z_axis):
+    elif np.allclose(axis, -z_axis):
         R_align = R.from_rotvec(np.pi * np.array([1, 0, 0])).as_matrix()
     else:
-        rot_axis = np.cross(z_axis, rand_axis)
-        rot_angle = np.arccos(np.dot(z_axis, rand_axis))
+        rot_axis = np.cross(z_axis, axis)
+        rot_angle = np.arccos(np.dot(z_axis, axis))
         R_align = R.from_rotvec(rot_angle * rot_axis / np.linalg.norm(rot_axis)).as_matrix()
 
     # 4. Rotate the helix

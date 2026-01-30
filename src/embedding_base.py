@@ -12,7 +12,7 @@ from scipy.spatial.distance import cdist
 from numpy.lib.stride_tricks import sliding_window_view
 
 import umap
-
+import src.viz
 
 class EmbeddingBase:
     def __init__(
@@ -187,9 +187,10 @@ class EmbeddingBase:
             self.set_n_windows()
 
         if self.indices is not None:
-            data_to_embed = self.flatten_embedding_matrix[self.indices]
+            data_to_embed = self.flatten_embedding_matrix[self.indices]            
         else:
             data_to_embed = self.flatten_embedding_matrix
+        n_pts = data_to_embed.shape[0]
 
         if with_cluster_centers:
             if self.cluster_centers_ is not None:
@@ -197,8 +198,8 @@ class EmbeddingBase:
 
         reducer = umap.UMAP(n_neighbors=n_neighbors, min_dist=min_dist, n_components=2, metric="euclidean")
         reduced_all = reducer.fit_transform(data_to_embed)
-        reduced_points = reduced_all[:self.n_windows]
-        reduced_centers = reduced_all[self.n_windows:]
+        reduced_points = reduced_all[:n_pts]
+        reduced_centers = reduced_all[n_pts:]
         return reduced_points, reduced_centers
 
     def make_cluster(
