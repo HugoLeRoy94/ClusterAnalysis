@@ -1,5 +1,5 @@
 import numpy as np, dash
-from dash import dcc, html, Input, Output
+from dash import dcc, html, Input, Output, MATCH, ctx
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from matplotlib.colors import LogNorm
@@ -15,89 +15,164 @@ from matplotlib.colors import Normalize, LogNorm
 import plotly.express as px
 
 import seaborn as sns
+import h5py
 import pickle
 
 import sys
 sys.path.append('../')
 
-# save the files to investigate with the dash app
-folder = "../../data/Algoriphagus/"
-parquet_files = ["Expt1_251217_Pre_umap.parquet", "Expt1_251217_Post_umap.parquet"]
-color_files = ['coarse_grained_Pre.parquet','coarse_grained_Post.parquet']
-reduced_pts = list()
-for i in range(len(parquet_files)):
-    reduced_pts.append(ak.from_parquet(folder + parquet_files[i]))
 
-color_files = list()
-for i in range(len(color_files)):
-    color_files.append(ak.from_parquet(folder+color_files[i]))
 
-# ---------- 1.  build the main figure exactly as before ----------
-def build_overview():
-    fig = make_subplots(rows=2, cols=3)
-    norms = [LogNorm(10,100), LogNorm(100,800), LogNorm(100,2000)]
+xml_files = ["Expt1_251217_Pre", "Expt1_251217_Post"]
 
-    for i in range(3):
-        x, y  = data[i][:,0], data[i][:,1]
-        lab   = embs[i].labels
+data, colors, embs, mkvs = [], [], [], []
 
-        # density (= top row)
-        hist, xe, ye = np.histogram2d(x,y,bins=100)
-        loghist = np.log10(hist.T+1e-3)
-        fig.add_trace(go.Heatmap(
-            z=loghist, x=xe, y=ye, colorscale='Viridis',
-            zmin=np.log10(norms[i].vmin), zmax=np.log10(norms[i].vmax),
-            colorbar=dict(x=0.3+0.35*i, len=0.4, thickness=10, y=0.82,
-                          yanchor='middle', title='log10(count)')),
-            row=1, col=i+1)
+input_filename = '../data/choano/interim/nested_data.h5'
+#input_filename = '../data/choano/interim/nested_multi_embs.h5'
 
-        # scatter (= bottom row) –─ add index in customdata
-        fig.add_trace(go.Scattergl(
-            x=x, y=y, mode='markers',
-            marker=dict(color=lab, size=2, colorscale='Viridis',
-                        showscale=False),
-            customdata=np.arange(len(x)),       # <── index here
-            hovertemplate="idx %{customdata}<extra></extra>"),
-            row=2, col=i+1)
+with h5py.File(input_filename, 'r') as hf:
+    for name in xml_files:
+        # Access the group
+        grp = hf[name]
+        
+        # Load Arrays (Note: [:] loads the data into memory)
+        data.append(grp['umap_points'][:])
+        colors.append(grp['color'][:])
+        
+        # Load Pickles
+        # We read the void data -> bytes -> unpickle
+        # .tobytes() converts the numpy void wrapper back to raw bytes
+        emb_blob = grp['embedding'][()] 
+        embs.append(pickle.loads(emb_blob.tobytes()))
+        
+        mkv_blob = grp['markov'][()]
+        mkvs.append(pickle.loads(mkv_blob.tobytes()))
 
-    fig.update_layout(width=900, height=600, margin_t=30, showlegend=False)
+print("Data loaded successfully.")
+
+Dimension = embs[0].D_total
+
+
+# ... (Imports and Data Loading remain the same) ...
+
+# Mock data for demonstration if files are missing
+# data = [np.random.rand(100, 2) for _ in range(2)]
+# embs = [type('obj', (object,), {'flatten_embedding_matrix': np.random.rand(100, 30)})() for _ in range(2)]
+# Dimension = 3
+
+# ---------- 1. Helper to build a SINGLE overview figure ----------
+def build_single_overview(dataset_index):
+    # Extract data for this specific index
+    xy = data[dataset_index]
+    x, y = xy[:, 0], xy[:, 1]
+    
+    # Create a standalone figure (not a subplot)
+    fig = go.Figure(go.Scattergl(
+        x=x, y=y, 
+        mode='markers',
+        marker=dict(size=3, color=colors[dataset_index], colorscale='Viridis', showscale=False), # Mock color
+        # We don't need customdata; we will use pointIndex
+        hovertemplate="Index: %{pointIndex}<extra></extra>"
+    ))
+    
+    fig.update_layout(
+        margin=dict(l=10, r=10, t=30, b=10),
+        height=300,  # Fixed height for consistency
+        title=f'Dataset {dataset_index}'
+    )
     return fig
-# -----------------------------------------------------------------
 
 app = dash.Dash(__name__)
 
-app.layout = html.Div([
-    html.Div(dcc.Graph(id='overview', figure=build_overview()),
-             style={'display':'inline-block', 'width':'900px'}),
-    html.Div(dcc.Graph(id='detail', figure=go.Figure()),
-             style={'display':'inline-block', 'width':'300px', 'height':'300px',
-                    'paddingLeft':'15px'})      # tiny side window
-])
+# ---------- 2. Dynamic Layout Generation ----------
+def create_app_layout():
+    # We create a list of columns. 
+    # Each column holds one 'Overview' and one 'Detail' for index 'i'
+    graph_columns = []
+    
+    for i in range(len(data)):
+        col = html.Div([
+            # TOP GRAPH (Overview)
+            dcc.Graph(
+                # ID is a DICTIONARY now, allowing pattern matching
+                id={'type': 'overview', 'index': i}, 
+                figure=build_single_overview(i),
+                style={'height': '500px'}
+            ),
+            
+            # BOTTOM GRAPH (Detail) - aligned directly under
+            dcc.Graph(
+                id={'type': 'detail', 'index': i},
+                figure=go.Figure(), # Start empty
+                style={'height': '500px'}
+            )
+        ], style={
+            'flex': '1',        # Distribute space equally
+            'minWidth': '250px', # Prevent squishing
+            'padding': '5px'
+        })
+        graph_columns.append(col)
 
-@app.callback(Output('detail', 'figure'),
-              Input('overview', 'hoverData'))
-def make_3d(hover):
+    # Return a Flexbox container holding these columns
+    return html.Div(graph_columns, style={'display': 'flex', 'flexDirection': 'row'})
+
+app.layout = create_app_layout()
+
+
+# ---------- 3. The Pattern-Matching Callback ----------
+@app.callback(
+    Output({'type': 'detail', 'index': MATCH}, 'figure'),
+    Input({'type': 'overview', 'index': MATCH}, 'hoverData')
+)
+def update_detail(hover):
+    # 1. Determine which dataset triggered this callback
+    # ctx.triggered_id returns the dictionary ID of the input that fired
+    if not ctx.triggered_id:
+        return dash.no_update
+    
+    i = ctx.triggered_id['index']  # This gets the 'i' automatically!
+
     if hover is None:
         return go.Figure()
 
-    # 2. recover dataset / point index -----------------------------
     point = hover['points'][0]
-    idx   = point['customdata']   # integer index in data[i]
-    col   = point['curveNumber']  # tells which subplot we came from
-    i     = (col -   3) // 2      # 0,1,2 because top traces=0-2
 
-    v = embs[i].flatten_embedding_matrix[idx]   # shape (3*L,)
-    xs, ys, zs = v[0::3], v[1::3], v[2::3]
+    if 'pointIndex' not in point:
+        return dash.no_update
 
-    # 3-D line / scatter ------------------------------------------
-    fig = go.Figure(go.Scatter3d(x=xs, y=ys, z=zs,
-                                 mode='lines+markers',
-                                 marker=dict(size=3)))
-    fig.update_layout(margin=dict(l=0,r=0,b=0,t=20),
-                      scene=dict(aspectmode='data'),
-                      title=f'point {idx} in set {i}')
+    idx = point['pointIndex']
+
+    # Safety Check
+    if i >= len(embs):
+        return dash.no_update
+
+    # 2. Retrieve Data using 'i' and 'idx'
+    try:
+        v = embs[i].flatten_embedding_matrix[idx]
+    except IndexError:
+        return dash.no_update
+
+    # 3. Build Figure (Logic from before)
+    if Dimension == 3:
+        xs, ys, zs = v[0::3], v[1::3], v[2::3]
+        fig = go.Figure(go.Scatter3d(x=xs, y=ys, z=zs, mode='lines+markers', marker=dict(size=3)))
+        fig.update_layout(scene=dict(aspectmode='data'), margin=dict(l=0, r=0, b=0, t=30))
+    
+    elif Dimension == 2:
+        xs, ys = v[0::2], v[1::2]
+        fig = go.Figure(go.Scatter(x=xs, y=ys, mode='lines+markers', marker=dict(size=2)))
+        fig.update_layout(margin=dict(l=0, r=0, b=0, t=30))
+
+        # 2D LIMITS
+        fig.update_layout(
+            xaxis=dict(range=[-100, 100], constrain='domain'),
+            yaxis=dict(range=[-100, 100], scaleanchor="x", scaleratio=1),
+            margin=dict(l=0, r=0, b=0, t=30)
+        )
+
+    fig.update_layout(title=f'ID {idx} (Set {i})')
+    
     return fig
-# ---------------------------------------------------------------
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=8051)
